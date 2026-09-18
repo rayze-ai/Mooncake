@@ -198,6 +198,13 @@ The snapshot and ranged-read APIs remain generic Store primitives. Resharding
 and other callers can prepare and reuse snapshots for their own key sets
 without depending on Engram.
 
+Scatter path selection is also model-independent. See
+[Scatter Transfer Planning](../transfer-engine/scatter-transfer-planner.md) for
+the direct, gather, and pipelined-gather cost model shared with resharding and
+Structured Object transfers. Random Engram rows require owner-side active
+gather before that path can be enabled; requester-side staging does not reduce
+the number of unrelated RDMA READ requests.
+
 The binding builds ranges directly from contiguous NumPy row IDs.
 It rejects Python lists and implicit dtype or layout conversion.
 
