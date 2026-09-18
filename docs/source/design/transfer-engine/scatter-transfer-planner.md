@@ -149,9 +149,26 @@ rows. With three QPs, 2,048 tokens contain 98,304 ranges and 25,952,256 bytes:
 At four chunks, gathering took 2.19 ms and the RDMA window took 2.44 ms, but
 their overlapped owner time was 3.16 ms instead of their 4.63 ms sum. Eight
 chunks did not materially improve the median and made p95 worse, so four is the
-measured choice for this shape. The RDMA-only window moved 25.95 MB in 2.44 ms,
-or about 85.2 Gbit/s. The remaining end-to-end gap is primarily CPU gathering
-and control latency, not unused RDMA bandwidth.
+measured choice for this shape.
+
+The timed RDMA window starts at the first post and ends at the final CQ
+completion. Later gather chunks execute during that interval, so this is an
+overlapped completion window rather than isolated NIC time. It moved 25.95 MB
+in 2.44 ms, or about 85.2 Gbit/s of useful payload.
+
+Native `ib_read_bw` on the same single ERDMA device used 8 MiB messages, 128
+outstanding reads, and the device's 1,024-byte MTU:
+
+| QPs | Average bandwidth |
+|---:|---:|
+| 1 | 54.12 Gbit/s |
+| 3 | 95.45 Gbit/s |
+| 8 | 95.46 Gbit/s |
+
+Three QPs therefore saturate the single-device path for large reads. The
+85.2 Gbit/s overlapped window reaches 89.3% of the measured 95.46 Gbit/s native
+READ ceiling. Its remaining gap includes short-transfer, chunk-boundary, and
+control effects; the larger end-to-end gap additionally includes CPU gathering.
 
 These measurements validate the candidate model, not a universal numeric
 threshold. A different NIC or memory type supplies different measured
