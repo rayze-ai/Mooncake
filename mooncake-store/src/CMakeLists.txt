@@ -684,8 +684,7 @@ if(USE_CUDA)
   target_compile_definitions(mooncake_client PRIVATE USE_CUDA)
   target_include_directories(mooncake_client
                              PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
-  target_link_libraries(mooncake_client PRIVATE CUDA::cudart
-                                                CUDA::cuda_driver)
+  target_link_libraries(mooncake_client PRIVATE CUDA::cudart CUDA::cuda_driver)
 elseif(USE_HIP)
   target_compile_definitions(mooncake_client PRIVATE USE_HIP)
   target_link_libraries(mooncake_client PRIVATE hip::host)

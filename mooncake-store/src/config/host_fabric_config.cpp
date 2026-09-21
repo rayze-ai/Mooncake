@@ -20,8 +20,8 @@ HostFabricConfig HostFabricConfig::FromEnvironment() {
         return config;
     }
     // Value-based rather than presence-based, matching MC_STORE_VRAM_FABRIC:
-    // an unparseable or explicitly false value leaves the feature off, so
-    // `MC_STORE_HOST_FABRIC=0` cannot silently opt a node in.
+    // a value that does not parse, or an explicitly false one, leaves the
+    // feature off, so `MC_STORE_HOST_FABRIC=0` cannot silently opt a node in.
     const auto parsed = TryParseBool(*raw);
     if (!parsed.has_value()) {
         LOG(WARNING) << "Invalid MC_STORE_HOST_FABRIC='" << *raw
