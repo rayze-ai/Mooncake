@@ -91,6 +91,8 @@ set(MOONCAKE_STORE_CLIENT_SOURCES
     mmap_arena.cpp
     config/hugepage_config.cpp
     config/vram_fabric_config.cpp
+    config/host_fabric_config.cpp
+    common/host_fabric_allocator.cpp
     config/mmap_arena_config.cpp
     common/mmap_buffer.cpp
     client_service.cpp
@@ -620,7 +622,10 @@ if(TARGET Mooncake::liburing)
   target_link_libraries(mooncake_store PUBLIC Mooncake::liburing)
 endif()
 if(USE_CUDA)
-  target_link_libraries(mooncake_store PRIVATE CUDA::cudart)
+  # cuda_driver is needed for the CUDA VMM calls in
+  # common/host_fabric_allocator.cpp (cuMemCreate and friends); cudart alone
+  # does not export them.
+  target_link_libraries(mooncake_store PRIVATE CUDA::cudart CUDA::cuda_driver)
 elseif(USE_HIP)
   target_link_libraries(mooncake_store PRIVATE hip::host)
 endif()
@@ -679,7 +684,8 @@ if(USE_CUDA)
   target_compile_definitions(mooncake_client PRIVATE USE_CUDA)
   target_include_directories(mooncake_client
                              PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
-  target_link_libraries(mooncake_client PRIVATE CUDA::cudart)
+  target_link_libraries(mooncake_client PRIVATE CUDA::cudart
+                                                CUDA::cuda_driver)
 elseif(USE_HIP)
   target_compile_definitions(mooncake_client PRIVATE USE_HIP)
   target_link_libraries(mooncake_client PRIVATE hip::host)

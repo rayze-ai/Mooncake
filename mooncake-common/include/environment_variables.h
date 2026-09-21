@@ -78,6 +78,7 @@ struct VramFabricEnvironmentVariables {
     // still leave the feature disabled, rather than silently enabling a
     // fabric allocation the driver may not support.
     MC_DEFINE_ENV_VAR(std::string, MC_STORE_VRAM_FABRIC);
+    MC_DEFINE_ENV_VAR(std::string, MC_STORE_HOST_FABRIC);
 };
 
 struct RegisteredPinnedMemoryEnvironmentVariables {

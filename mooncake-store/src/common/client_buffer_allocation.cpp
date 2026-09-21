@@ -16,6 +16,15 @@
 #ifdef USE_VRAM_SEGMENT
 #include "config/vram_fabric_config.h"
 #endif
+// Host DRAM exported as a fabric handle is only reachable via the final
+// aligned_alloc() fallback below, which a USE_VRAM_SEGMENT build never reaches:
+// there, every segment is device memory regardless of protocol. So the host
+// fabric path is compiled only for CUDA builds without VRAM segments.
+#if defined(USE_CUDA) && !defined(USE_VRAM_SEGMENT)
+#define MOONCAKE_STORE_FABRIC_HOST 1
+#include "common/host_fabric_allocator.h"
+#include "config/host_fabric_config.h"
+#endif
 #if defined(USE_VRAM_SEGMENT) && defined(USE_MNNVL)
 #include "gpu_vendor/mnnvl.h"
 // mnnvl.h dispatches to a vendor backend, and only the NVLink one offers an
@@ -126,6 +135,26 @@ tl::expected<void *, std::string> allocate_vram_memory(
 }
 #endif
 
+#ifdef MOONCAKE_STORE_FABRIC_HOST
+// Whether this host-DRAM buffer should be allocated through the CUDA VMM with
+// an exportable fabric handle instead of plain aligned_alloc(). Mirrors
+// use_fabric_vram(): only the cross-node NVLink protocol benefits, because
+// NvlinkTransport::registerLocalMemory() needs a retainable allocation handle
+// to make the segment reachable from a peer node. Every other protocol reads
+// the segment over RDMA/TCP, where a fabric handle buys nothing and the extra
+// VMM mapping only costs address space.
+//
+// Read once per process so an allocation and its later release agree on which
+// allocator owns the memory, even if the variable changes in between.
+bool use_fabric_host(const std::string &protocol) {
+    if (protocol != "nvlink") {
+        return false;
+    }
+    static const bool enabled = HostFabricConfig::IsEnabledFromEnvironment();
+    return enabled;
+}
+#endif
+
 }  // namespace
 
 size_t get_hugepage_size_from_env(unsigned int *out_flags, bool use_memfd) {
@@ -196,6 +225,27 @@ void *allocate_buffer_allocator_memory(size_t total_size,
     }
     return *ret;
 #endif
+#ifdef MOONCAKE_STORE_FABRIC_HOST
+    if (use_fabric_host(protocol)) {
+        void *ptr = AllocateHostFabricMemory(total_size, alignment);
+        if (ptr == nullptr) {
+            // Deliberately no aligned_alloc() fallback: that pointer carries no
+            // fabric handle, so registerLocalMemory() would register nothing
+            // and the segment would mount but stay unreachable from peers.
+            // Failing here names the real cause.
+            LOG(ERROR) << "Failed to allocate " << total_size
+                       << " bytes of fabric host memory for protocol "
+                       << protocol
+                       << "; unset MC_STORE_HOST_FABRIC to use plain host "
+                          "memory instead.";
+            return nullptr;
+        }
+        LOG(INFO) << "Allocated " << total_size
+                  << " bytes of fabric host memory, base=" << ptr
+                  << ", alignment=" << alignment;
+        return ptr;
+    }
+#endif
     // Allocate aligned memory
     return aligned_alloc(alignment, total_size);
 }
@@ -246,6 +296,16 @@ void free_memory(const std::string &protocol, void *ptr, bool use_spdk_dma) {
 #endif
     cudaFree(ptr);
     return;
+#endif
+#ifdef MOONCAKE_STORE_FABRIC_HOST
+    // Mirror allocate_buffer_allocator_memory(): a fabric host buffer is a VMM
+    // mapping over a cuMemCreate handle, so free() would abort on a pointer
+    // glibc never handed out. The branch must key off the same protocol and
+    // switch the allocation did.
+    if (use_fabric_host(protocol)) {
+        FreeHostFabricMemory(ptr);
+        return;
+    }
 #endif
     free(ptr);
 }
