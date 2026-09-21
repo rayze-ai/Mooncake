@@ -166,6 +166,14 @@ struct GlobalConfig {
     // ASCEND_GLOBAL_RESOURCE_CONFIG (e.g. Store=RoCE, P2P=HCCS). Assumes TE
     // inits are serialized within the process.
     bool ascend_store_te_init = false;
+    // NVLink-domain identity of this node, as the deployment labels it (e.g.
+    // one NVL72 rack). Published in the local SegmentDesc so a remote
+    // initiator can tell whether a cross-node NVLink fabric handle is
+    // importable before choosing the nvlink transport. Empty (the default)
+    // means "not configured", which the gate treats as unknown rather than as
+    // a match. Override via MC_RACK_ID, or MOONCAKE_RACK_ID which the Store
+    // config already uses.
+    std::string rack_id;
     // ub config parameters
     size_t num_jfc_per_ctx = 2;
     size_t num_jfce_per_ctx = 2;

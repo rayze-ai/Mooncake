@@ -147,6 +147,8 @@ class StoreServiceApiTest(unittest.IsolatedAsyncioTestCase):
             tenant_id="tenant-a",
             enable_client_http_server=False,
             client_http_port=9300,
+            rack_id="",
+            strict_rack=False,
         )
 
         with patch(
@@ -173,10 +175,43 @@ class StoreServiceApiTest(unittest.IsolatedAsyncioTestCase):
                         "tenant_id": "tenant-a",
                         "enable_client_http_server": False,
                         "client_http_port": 9300,
+                        "rack_id": "",
+                        "strict_rack": "false",
                     },
                 )
             ],
         )
+
+    async def test_start_store_service_passes_rack_affinity_to_setup(self):
+        fake_store = FakeStore()
+        self.service.config = SimpleNamespace(
+            local_hostname="localhost",
+            metadata_server="P2PHANDSHAKE",
+            global_segment_size=1024,
+            local_buffer_size=2048,
+            protocol="tcp",
+            device_name="",
+            master_server_address="127.0.0.1:50051",
+            enable_ssd_offload=False,
+            ssd_offload_path="",
+            tenant_id="default",
+            enable_client_http_server=False,
+            client_http_port=9300,
+            rack_id="rack0",
+            strict_rack=True,
+        )
+
+        with patch(
+            "mooncake.mooncake_store_service.MooncakeDistributedStore",
+            return_value=fake_store,
+        ):
+            result = await self.service.start_store_service(max_wait_time=1)
+
+        self.assertTrue(result)
+        setup_dict = fake_store.setup_calls[0][0]
+        self.assertEqual(setup_dict["rack_id"], "rack0")
+        # ConfigDict is dict[str, str]; the bool must be a lowercase string.
+        self.assertEqual(setup_dict["strict_rack"], "true")
 
     async def test_cli_config_can_override_tenant_id(self):
         config = {

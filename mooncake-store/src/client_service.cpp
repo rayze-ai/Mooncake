@@ -516,10 +516,18 @@ Client::~Client() {
     hot_cache_.reset();
 }
 
-ReplicateConfig Client::AttachHostId(const ReplicateConfig& config) const {
+ReplicateConfig Client::AttachLocalityHints(
+    const ReplicateConfig& config) const {
     ReplicateConfig client_cfg = config;
     if (!host_id_.empty()) {
         client_cfg.host_id = host_id_;
+    }
+    // Rack affinity defaults: apply only when the request left rack_id unset;
+    // a request that names its own rack keeps full control (including
+    // strict_rack) over its placement.
+    if (!rack_id_.empty() && client_cfg.RackId().empty()) {
+        client_cfg.rack_id = rack_id_;
+        client_cfg.strict_rack = strict_rack_;
     }
     return client_cfg;
 }
@@ -1900,7 +1908,7 @@ tl::expected<void, ErrorCode> Client::Put(const ObjectKey& key,
         slice_lengths.emplace_back(slices[i].size);
     }
 
-    ReplicateConfig client_cfg = AttachHostId(config);
+    ReplicateConfig client_cfg = AttachLocalityHints(config);
     if (protocol_ == "cxl") {
         client_cfg.preferred_segment = local_hostname_;
     }
@@ -2113,7 +2121,7 @@ tl::expected<void, ErrorCode> Client::Upsert(const ObjectKey& key,
         slice_lengths.emplace_back(slices[i].size);
     }
 
-    ReplicateConfig client_cfg = AttachHostId(config);
+    ReplicateConfig client_cfg = AttachLocalityHints(config);
     if (protocol_ == "cxl") {
         client_cfg.preferred_segment = local_hostname_;
     }
@@ -2257,7 +2265,7 @@ std::vector<tl::expected<void, ErrorCode>> Client::BatchUpsert(
     const std::vector<ObjectKey>& keys,
     std::vector<std::vector<Slice>>& batched_slices,
     const ReplicateConfig& config, const WriteBufferStager& stager) {
-    ReplicateConfig client_cfg = AttachHostId(config);
+    ReplicateConfig client_cfg = AttachLocalityHints(config);
     if (protocol_ == "cxl") {
         client_cfg.preferred_segment = local_hostname_;
     }
@@ -3543,7 +3551,7 @@ std::vector<tl::expected<void, ErrorCode>> Client::BatchPut(
     const std::vector<ObjectKey>& keys,
     std::vector<std::vector<Slice>>& batched_slices,
     const ReplicateConfig& config, const WriteBufferStager& stager) {
-    ReplicateConfig client_cfg = AttachHostId(config);
+    ReplicateConfig client_cfg = AttachLocalityHints(config);
     if (protocol_ == "cxl") {
         client_cfg.preferred_segment = local_hostname_;
     }
@@ -3588,7 +3596,7 @@ Client::StartBatchPutForSizes(const std::vector<std::string>& keys,
         return results;
     }
 
-    ReplicateConfig client_cfg = AttachHostId(config);
+    ReplicateConfig client_cfg = AttachLocalityHints(config);
     if (protocol_ == "cxl") {
         client_cfg.preferred_segment = local_hostname_;
     }
@@ -3835,6 +3843,13 @@ tl::expected<UUID, ErrorCode> Client::MountSegmentAndGetId(
         segment.size = size;
         segment.protocol = protocol;
         segment.host_id = host_id_;
+        // Leave rack_id unset rather than set to "" when rack affinity is off,
+        // so a rackless client sends nothing instead of an engaged empty
+        // string. Both read as empty through RackId(); keeping "unset" real
+        // matches what a client predating rack affinity puts on the wire.
+        if (!rack_id_.empty()) {
+            segment.rack_id = rack_id_;
+        }
         if (metadata_connstring_ == P2PHANDSHAKE) {
             segment.te_endpoint = transfer_engine_->getLocalIpAndPort();
         } else {

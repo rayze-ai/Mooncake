@@ -146,8 +146,29 @@ class AllocatedBuffer {
         uintptr_t buffer_address_;
         std::string protocol_;
         std::string transport_endpoint_;
+        // Rack (NVLink domain) of the segment owning this buffer; unset when
+        // rack affinity is unused. Used by readers for same-rack-first replica
+        // selection.
+        //
+        // struct_pack::compatible is required, not merely tidy: struct_pack
+        // validates a type hash computed over every member, so adding a plain
+        // field changes the hash and makes new and old peers fail to
+        // deserialize each other. This descriptor crosses the wire in
+        // GetReplicaList responses, so a plain field would break any
+        // client/master version skew. compatible<T, N> is the mechanism that
+        // keeps the hash stable; version 1 because this struct has no earlier
+        // compatible member. Read it through rack_id() rather than unwrapping
+        // the optional at each call site.
+        struct_pack::compatible<std::string, 1> rack_id_{};
+
+        // Empty when the peer predates rack affinity or rack affinity is off.
+        [[nodiscard]] const std::string& rack_id() const noexcept {
+            static const std::string kNoRack;
+            return rack_id_.has_value() ? *rack_id_ : kNoRack;
+        }
+
         YLT_REFL(Descriptor, size_, buffer_address_, protocol_,
-                 transport_endpoint_);
+                 transport_endpoint_, rack_id_);
     };
 
     void change_to_cxl(std::string client_segment_name);
@@ -207,6 +228,14 @@ class BufferAllocatorBase {
     void AttachUsageTracker(
         const std::shared_ptr<StorageUsageTracker>& usage_tracker);
 
+    // Rack (NVLink domain) of the segment backing this allocator. Set at
+    // mount time; empty when rack affinity is unused. Propagated into
+    // AllocatedBuffer::Descriptor so readers can prefer same-rack replicas.
+    void SetRackId(std::string rack_id) { rack_id_ = std::move(rack_id); }
+    [[nodiscard]] const std::string& GetRackId() const noexcept {
+        return rack_id_;
+    }
+
    protected:
     [[nodiscard]] size_t GetUsageBytes() const noexcept {
         return cur_size_.load(std::memory_order_relaxed);
@@ -220,6 +249,7 @@ class BufferAllocatorBase {
    private:
     std::atomic_size_t cur_size_{0};
     std::unique_ptr<StorageUsageRegistration> usage_registration_;
+    std::string rack_id_;
 };
 
 /**

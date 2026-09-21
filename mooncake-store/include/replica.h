@@ -124,6 +124,29 @@ struct ReplicateConfig {
     // eviction treats the group as a unit (all-or-none). Object routing is
     // always hash(tenant, key) and is decoupled from groups.
     std::optional<std::vector<std::string>> group_ids{};
+    // Rack affinity (NVLink-domain aware placement). When strict_rack is
+    // true, the master allocates memory replicas only on segments whose
+    // rack_id matches this field; if the rack cannot satisfy the request,
+    // allocation fails (NO_AVAILABLE_HANDLE) instead of falling back to
+    // another rack. strict_rack without rack_id is ignored with a warning.
+    //
+    // This struct is a coro_rpc parameter, so struct_pack reflects it
+    // automatically and validates a type hash over every member. Plain members
+    // would change that hash and break deserialization between a client and a
+    // master of different versions; struct_pack::compatible is what keeps it
+    // stable. Read them through RackId()/IsStrictRack().
+    struct_pack::compatible<std::string, 1> rack_id{};
+    struct_pack::compatible<bool, 1> strict_rack{};
+
+    // Empty when the peer predates rack affinity or rack affinity is off.
+    [[nodiscard]] const std::string& RackId() const noexcept {
+        static const std::string kNoRack;
+        return rack_id.has_value() ? *rack_id : kNoRack;
+    }
+
+    [[nodiscard]] bool IsStrictRack() const noexcept {
+        return strict_rack.value_or(false);
+    }
 
     ReplicateConfig ForSingleKey(size_t key_index) const {
         ReplicateConfig key_config = *this;
@@ -176,6 +199,10 @@ struct ReplicateConfig {
                 if (i + 1 < config.group_ids->size()) os << ", ";
             }
             os << "]";
+        }
+        if (!config.RackId().empty()) {
+            os << ", rack_id: " << config.RackId()
+               << ", strict_rack: " << config.IsStrictRack();
         }
         os << " }";
         return os;

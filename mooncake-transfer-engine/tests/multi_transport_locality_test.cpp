@@ -78,6 +78,77 @@ TEST(MultiTransportLocalityTest, HostMatchIsCaseInsensitive) {
         isHipReachableTarget("[2001:DB8::1]:8000", "[2001:db8::1]:9000"));
 }
 
+// --- rack reachability for the nvlink fabric path ---
+
+TEST(MultiTransportLocalityTest, RackReachableWhenRacksMatch) {
+    EXPECT_EQ(rackReachabilityForNvlink("node-b:8000", "node-a:8000", "rack0",
+                                        "rack0"),
+              RackReachability::Reachable);
+}
+
+TEST(MultiTransportLocalityTest, RackUnreachableWhenRacksDiffer) {
+    EXPECT_EQ(rackReachabilityForNvlink("node-b:8000", "node-a:8000", "rack1",
+                                        "rack0"),
+              RackReachability::Unreachable);
+}
+
+TEST(MultiTransportLocalityTest, RackUnknownWhenEitherSideUnset) {
+    // Unset is not a statement that the racks differ, so it must not be
+    // reported as Unreachable: the caller lets the request through.
+    EXPECT_EQ(
+        rackReachabilityForNvlink("node-b:8000", "node-a:8000", "", "rack0"),
+        RackReachability::Unknown);
+    EXPECT_EQ(
+        rackReachabilityForNvlink("node-b:8000", "node-a:8000", "rack1", ""),
+        RackReachability::Unknown);
+    EXPECT_EQ(rackReachabilityForNvlink("node-b:8000", "node-a:8000", "", ""),
+              RackReachability::Unknown);
+}
+
+TEST(MultiTransportLocalityTest, SameHostIsReachableRegardlessOfRack) {
+    // A same-host target needs no fabric import at all, so a mismatched or
+    // missing rack id must not block it. This keeps single-node deployments
+    // working without any rack configuration.
+    EXPECT_EQ(rackReachabilityForNvlink("node-a:9000", "node-a:8000", "rack1",
+                                        "rack0"),
+              RackReachability::Reachable);
+    EXPECT_EQ(
+        rackReachabilityForNvlink("node-a:9000", "node-a:8000", "", "rack0"),
+        RackReachability::Reachable);
+    EXPECT_EQ(rackReachabilityForNvlink("node-a:9000", "node-a:8000", "", ""),
+              RackReachability::Reachable);
+}
+
+TEST(MultiTransportLocalityTest, RackIdsAreTrimmed) {
+    // A YAML env picks up stray whitespace easily; it must not turn two nodes
+    // in the same rack into a cross-rack pair.
+    EXPECT_EQ(rackReachabilityForNvlink("node-b:8000", "node-a:8000",
+                                        " rack0 ", "rack0\n"),
+              RackReachability::Reachable);
+    // Whitespace-only is indistinguishable from unset.
+    EXPECT_EQ(rackReachabilityForNvlink("node-b:8000", "node-a:8000", "  ",
+                                        "rack0"),
+              RackReachability::Unknown);
+}
+
+TEST(MultiTransportLocalityTest, RackIdComparisonIsCaseSensitive) {
+    // Unlike hostnames, rack ids are opaque operator labels: "Rack0" and
+    // "rack0" may well be two different racks, so they are not folded.
+    EXPECT_EQ(rackReachabilityForNvlink("node-b:8000", "node-a:8000", "Rack0",
+                                        "rack0"),
+              RackReachability::Unreachable);
+}
+
+TEST(MultiTransportLocalityTest, TrimRackIdHandlesEdgeCases) {
+    EXPECT_EQ(trimRackId(""), "");
+    EXPECT_EQ(trimRackId("   "), "");
+    EXPECT_EQ(trimRackId("\t\r\n"), "");
+    EXPECT_EQ(trimRackId("rack0"), "rack0");
+    EXPECT_EQ(trimRackId("  rack-0  "), "rack-0");
+    // Interior whitespace is part of the label, not padding.
+    EXPECT_EQ(trimRackId(" rack 0 "), "rack 0");
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

@@ -97,8 +97,10 @@ bool AllocatedBuffer::copyTransferProtocolFrom(const AllocatedBuffer& source) {
 AllocatedBuffer::Descriptor AllocatedBuffer::get_descriptor() const {
     auto alloc = allocator_.lock();
     std::string endpoint;
+    std::string rack_id;
     if (alloc) {
         endpoint = alloc->getTransportEndpoint();
+        rack_id = alloc->GetRackId();
     } else {
         LOG(ERROR) << "allocator=expired_or_null in get_descriptor";
     }
@@ -107,8 +109,17 @@ AllocatedBuffer::Descriptor AllocatedBuffer::get_descriptor() const {
         endpoint = this->segment_name_;
     }
 
-    return {static_cast<uint64_t>(size()),
-            reinterpret_cast<uintptr_t>(buffer_ptr_), this->protocol, endpoint};
+    Descriptor descriptor{static_cast<uint64_t>(size()),
+                          reinterpret_cast<uintptr_t>(buffer_ptr_),
+                          this->protocol, endpoint};
+    // Leave rack_id_ unset rather than set to "" when there is no rack, so a
+    // rackless segment sends nothing instead of an engaged empty string. Both
+    // read as empty through rack_id(), but keeping "unset" real matches what a
+    // peer without rack affinity puts on the wire.
+    if (!rack_id.empty()) {
+        descriptor.rack_id_ = std::move(rack_id);
+    }
+    return descriptor;
 }
 
 void AllocatedBuffer::change_to_cxl(std::string client_segment_name) {

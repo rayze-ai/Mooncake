@@ -4619,12 +4619,62 @@ auto MasterService::AllocateReplicas(const std::string& key,
             }
         }
         AllocatorManager allocator_snapshot;
+        std::set<std::string> excluded_segments;
         {
             ScopedAllocatorAccess allocator_access =
                 segment_manager_.getAllocatorAccess();
-            has_enough_memory_segments = allocator_access.getAllocatorManager()
-                                             .getServingNames()
-                                             .size() >= config.replica_num;
+            const auto serving_names =
+                allocator_access.getAllocatorManager().getServingNames();
+            if (config.IsStrictRack() && config.RackId().empty()) {
+                LOG(WARNING) << "key=" << key
+                             << ", strict_rack=true but rack_id is empty, "
+                                "falling back to non-strict allocation";
+            }
+            const bool strict_rack =
+                config.IsStrictRack() && !config.RackId().empty();
+            if (strict_rack) {
+                // Rack-affinity strict mode: only segments in the writer's
+                // rack (NVLink domain) may serve this object. Rack-external
+                // segments are excluded, so a full rack fails the allocation
+                // (and triggers eviction) instead of spilling cross-rack.
+                const auto rack_names =
+                    allocator_access.GetRackSegmentNames(config.RackId());
+                size_t rack_serving_names = 0;
+                for (const auto& name : serving_names) {
+                    if (rack_names.count(name) > 0) {
+                        ++rack_serving_names;
+                    } else {
+                        excluded_segments.insert(name);
+                    }
+                }
+                has_enough_memory_segments =
+                    rack_serving_names >= config.replica_num;
+                if (rack_names.empty()) {
+                    // Strict mode is working as specified -- a segment with no
+                    // rack identity is not in the writer's rack, so it is not
+                    // a candidate. But an empty rack index means *no* segment
+                    // anywhere reported a rack, which is a configuration or
+                    // restore problem rather than a full rack, and it fails
+                    // every single write. Name it explicitly: the plain
+                    // NO_AVAILABLE_HANDLE this produces otherwise looks
+                    // identical to running out of capacity.
+                    LOG(ERROR)
+                        << "key=" << key << ", strict_rack with rack_id="
+                        << config.RackId()
+                        << " but the master knows of no rack-bearing segment "
+                           "at all; every memory allocation will fail. Check "
+                           "that store nodes set rack_id, and that they "
+                           "remounted after a master restored a pre-rack "
+                           "snapshot.";
+                }
+                VLOG(1) << "key=" << key << ", rack_id=" << config.RackId()
+                        << ", strict_rack_excluded="
+                        << excluded_segments.size()
+                        << ", rack_serving_segments=" << rack_serving_names;
+            } else {
+                has_enough_memory_segments =
+                    serving_names.size() >= config.replica_num;
+            }
             if (!writer_host_id.empty()) {
                 auto host_ordered_segments =
                     allocator_access.GetHostOrderedSegments(writer_host_id,
@@ -4639,12 +4689,31 @@ auto MasterService::AllocateReplicas(const std::string& key,
                             << host_ordered_segments.size();
                 }
             }
+            if (!strict_rack && !config.RackId().empty()) {
+                // Soft rack affinity: rank same-rack (NVLink domain) segments
+                // ahead of rack-external ones without excluding the latter, so
+                // a full rack still spills cross-rack over RDMA instead of
+                // failing the write.
+                const auto rack_names =
+                    allocator_access.GetRackSegmentNames(config.RackId());
+                size_t rack_preferred = 0;
+                for (const auto& name : serving_names) {
+                    if (rack_names.count(name) > 0) {
+                        append_preferred_segment(name);
+                        ++rack_preferred;
+                    }
+                }
+                if (rack_preferred > 0) {
+                    VLOG(1) << "key=" << key << ", rack_id=" << config.RackId()
+                            << ", rack_preferred_segments=" << rack_preferred;
+                }
+            }
             allocator_snapshot = allocator_access.SnapshotAllocatorManager();
         }
 
         auto allocation_result = allocation_strategy_->Allocate(
             allocator_snapshot, value_length, config.replica_num,
-            preferred_segments, std::set<std::string>(), ReplicaType::MEMORY);
+            preferred_segments, excluded_segments, ReplicaType::MEMORY);
 
         if (!allocation_result.has_value()) {
             VLOG(1) << "Failed to allocate replicas for key=" << key

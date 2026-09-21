@@ -164,6 +164,117 @@ class TestMooncakeConfig(unittest.TestCase):
         self.assertEqual(config.enable_client_http_server, True)
         self.assertEqual(config.client_http_port, 19444)
 
+    def test_rack_affinity_from_file(self):
+        """Test loading rack_id/strict_rack from configuration file"""
+        self.write_config(
+            {**self.valid_config, "rack_id": "rack0", "strict_rack": True}
+        )
+        config = MooncakeConfig.from_file(self.config_file)
+
+        self.assertEqual(config.rack_id, "rack0")
+        self.assertEqual(config.strict_rack, True)
+
+    def test_rack_affinity_defaults(self):
+        """Test rack_id/strict_rack default to disabled when omitted"""
+        minimal_config = {
+            "local_hostname": "localhost",
+            "metadata_server": "localhost:8080",
+            "master_server_address": "localhost:8081",
+        }
+        self.write_config(minimal_config)
+        config = MooncakeConfig.from_file(self.config_file)
+
+        self.assertEqual(config.rack_id, "")
+        self.assertEqual(config.strict_rack, False)
+
+    def test_rack_id_null_defaults(self):
+        """Test rack_id defaults to empty when explicitly null"""
+        self.write_config({**self.valid_config, "rack_id": None})
+        config = MooncakeConfig.from_file(self.config_file)
+
+        self.assertEqual(config.rack_id, "")
+
+    def test_strict_rack_string_values(self):
+        """from_file must parse string booleans for strict_rack like other bools"""
+        required = {
+            "local_hostname": "localhost",
+            "metadata_server": "localhost:8080",
+            "master_server_address": "localhost:8081",
+        }
+        cases = [
+            ("false", False),
+            ("0", False),
+            ("off", False),
+            ("true", True),
+            ("1", True),
+            ("yes", True),
+            (True, True),
+            (False, False),
+        ]
+        for raw, expected in cases:
+            with self.subTest(raw=raw):
+                self.write_config({**required, "strict_rack": raw})
+                config = MooncakeConfig.from_file(self.config_file)
+                self.assertEqual(config.strict_rack, expected)
+
+        self.write_config({**required, "strict_rack": "notabool"})
+        with self.assertRaises(ValueError):
+            MooncakeConfig.from_file(self.config_file)
+
+    def test_rack_affinity_from_env(self):
+        """Test loading rack_id/strict_rack from MOONCAKE_RACK_ID/MOONCAKE_STRICT_RACK"""
+        previous_config_path = os.environ.pop("MOONCAKE_CONFIG_PATH", None)
+        previous_master = os.environ.pop("MOONCAKE_MASTER", None)
+        previous_rack_id = os.environ.pop("MOONCAKE_RACK_ID", None)
+        previous_strict_rack = os.environ.pop("MOONCAKE_STRICT_RACK", None)
+
+        os.environ["MOONCAKE_MASTER"] = self.valid_config["master_server_address"]
+        os.environ["MOONCAKE_RACK_ID"] = "rack-from-env"
+        os.environ["MOONCAKE_STRICT_RACK"] = "true"
+
+        try:
+            config = MooncakeConfig.load_from_env()
+            self.assertEqual(config.rack_id, "rack-from-env")
+            self.assertEqual(config.strict_rack, True)
+        finally:
+            os.environ.pop("MOONCAKE_MASTER", None)
+            os.environ.pop("MOONCAKE_RACK_ID", None)
+            os.environ.pop("MOONCAKE_STRICT_RACK", None)
+            if previous_config_path is not None:
+                os.environ["MOONCAKE_CONFIG_PATH"] = previous_config_path
+            if previous_master is not None:
+                os.environ["MOONCAKE_MASTER"] = previous_master
+            if previous_rack_id is not None:
+                os.environ["MOONCAKE_RACK_ID"] = previous_rack_id
+            if previous_strict_rack is not None:
+                os.environ["MOONCAKE_STRICT_RACK"] = previous_strict_rack
+
+    def test_rack_affinity_env_defaults(self):
+        """Test rack affinity defaults to disabled when env vars are omitted"""
+        previous_config_path = os.environ.pop("MOONCAKE_CONFIG_PATH", None)
+        previous_master = os.environ.pop("MOONCAKE_MASTER", None)
+        previous_rack_id = os.environ.pop("MOONCAKE_RACK_ID", None)
+        previous_strict_rack = os.environ.pop("MOONCAKE_STRICT_RACK", None)
+
+        os.environ["MOONCAKE_MASTER"] = self.valid_config["master_server_address"]
+
+        try:
+            config = MooncakeConfig.load_from_env()
+            self.assertEqual(config.rack_id, "")
+            self.assertEqual(config.strict_rack, False)
+        finally:
+            os.environ.pop("MOONCAKE_MASTER", None)
+            os.environ.pop("MOONCAKE_RACK_ID", None)
+            os.environ.pop("MOONCAKE_STRICT_RACK", None)
+            if previous_config_path is not None:
+                os.environ["MOONCAKE_CONFIG_PATH"] = previous_config_path
+            if previous_master is not None:
+                os.environ["MOONCAKE_MASTER"] = previous_master
+            if previous_rack_id is not None:
+                os.environ["MOONCAKE_RACK_ID"] = previous_rack_id
+            if previous_strict_rack is not None:
+                os.environ["MOONCAKE_STRICT_RACK"] = previous_strict_rack
+
     def test_missing_required_field(self):
         """Test missing required field"""
         for field in ["local_hostname", "metadata_server", "master_server_address"]:

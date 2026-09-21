@@ -21,9 +21,12 @@ namespace mooncake {
 namespace {
 
 // Build a COMPLETE MEMORY replica descriptor with the given endpoint/protocol.
+// An empty rack leaves rack_id_ genuinely unset (not set to ""), which is what
+// a master predating rack affinity actually sends over the wire.
 Replica::Descriptor MakeMemory(const std::string& endpoint,
                                const std::string& protocol,
-                               ReplicaStatus status = ReplicaStatus::COMPLETE) {
+                               ReplicaStatus status = ReplicaStatus::COMPLETE,
+                               const std::string& rack = "") {
     Replica::Descriptor d;
     d.id = 0;
     MemoryDescriptor mem;
@@ -31,9 +34,19 @@ Replica::Descriptor MakeMemory(const std::string& endpoint,
     mem.buffer_descriptor.buffer_address_ = 0x1000;
     mem.buffer_descriptor.protocol_ = protocol;
     mem.buffer_descriptor.transport_endpoint_ = endpoint;
+    if (!rack.empty()) {
+        mem.buffer_descriptor.rack_id_ = rack;
+    }
     d.descriptor_variant = mem;
     d.status = status;
     return d;
+}
+
+// Shorthand for a COMPLETE MEMORY replica that carries a rack id.
+Replica::Descriptor MakeRackMemory(const std::string& endpoint,
+                                   const std::string& protocol,
+                                   const std::string& rack) {
+    return MakeMemory(endpoint, protocol, ReplicaStatus::COMPLETE, rack);
 }
 
 Replica::Descriptor MakeNoF(const std::string& endpoint,
@@ -110,7 +123,7 @@ TEST_F(ReplicaSelectionTest, LocalMemoryAlwaysWins) {
         MakeMemory("nodeA", "rdma"),
         MakeMemory("nodeB", "tcp"),  // local, slower protocol
     };
-    const auto* sel = SelectBestReplica(reps, local);
+    const auto* sel = SelectBestReplica(reps, local, "");
     ASSERT_NE(sel, nullptr);
     EXPECT_EQ(
         sel->get_memory_descriptor().buffer_descriptor.transport_endpoint_,
@@ -126,7 +139,7 @@ TEST_F(ReplicaSelectionTest, ScoringOffKeepsFirstRemoteMemory) {
         MakeMemory("nodeA", "tcp"),   // first
         MakeMemory("nodeB", "rdma"),  // "better" but must be ignored when off
     };
-    const auto* sel = SelectBestReplica(reps, local);
+    const auto* sel = SelectBestReplica(reps, local, "");
     ASSERT_NE(sel, nullptr);
     EXPECT_EQ(
         sel->get_memory_descriptor().buffer_descriptor.transport_endpoint_,
@@ -150,7 +163,7 @@ TEST_F(ReplicaSelectionTest, InjectedScorerPicksLowestScore) {
         MakeMemory("nodeB", "rdma"),  // lower score -> should win
         MakeMemory("nodeC", "rdma"),
     };
-    const auto* sel = SelectBestReplica(reps, local);
+    const auto* sel = SelectBestReplica(reps, local, "");
     ASSERT_NE(sel, nullptr);
     EXPECT_EQ(
         sel->get_memory_descriptor().buffer_descriptor.transport_endpoint_,
@@ -169,7 +182,7 @@ TEST_F(ReplicaSelectionTest, BuiltinScorerPrefersRdmaOverTcp) {
         MakeMemory("nodeA", "tcp"),   // first, but tcp
         MakeMemory("nodeB", "rdma"),  // rdma -> preferred
     };
-    const auto* sel = SelectBestReplica(reps, local);
+    const auto* sel = SelectBestReplica(reps, local, "");
     ASSERT_NE(sel, nullptr);
     EXPECT_EQ(
         sel->get_memory_descriptor().buffer_descriptor.transport_endpoint_,
@@ -195,7 +208,7 @@ TEST_F(ReplicaSelectionTest, EnvironmentOptInUsesBuiltinScorer) {
     };
 
     EXPECT_TRUE(RemoteReplicaScoringEnabled());
-    const auto* sel = SelectBestReplica(reps, local);
+    const auto* sel = SelectBestReplica(reps, local, "");
     ASSERT_NE(sel, nullptr);
     EXPECT_EQ(sel->get_memory_descriptor().buffer_descriptor.protocol_, "rdma");
 }
@@ -221,7 +234,7 @@ TEST_F(ReplicaSelectionTest, ScorerTieKeepsMasterOrder) {
         MakeMemory("nodeA", "rdma"),
         MakeMemory("nodeB", "rdma"),
     };
-    const auto* sel = SelectBestReplica(reps, local);
+    const auto* sel = SelectBestReplica(reps, local, "");
     ASSERT_NE(sel, nullptr);
     EXPECT_EQ(
         sel->get_memory_descriptor().buffer_descriptor.transport_endpoint_,
@@ -241,7 +254,7 @@ TEST_F(ReplicaSelectionTest, ScorerSkipsIncompleteReplicas) {
                    ReplicaStatus::PROCESSING),  // best score
                                                 // but not ready
     };
-    const auto* sel = SelectBestReplica(reps, local);
+    const auto* sel = SelectBestReplica(reps, local, "");
     ASSERT_NE(sel, nullptr);
     EXPECT_EQ(
         sel->get_memory_descriptor().buffer_descriptor.transport_endpoint_,
@@ -255,7 +268,7 @@ TEST_F(ReplicaSelectionTest, LocalStillWinsWhenScoringOn) {
         MakeMemory("nodeA", "rdma"),  // remote, best protocol
         MakeMemory("nodeB", "tcp"),   // local -> must still win over scoring
     };
-    const auto* sel = SelectBestReplica(reps, local);
+    const auto* sel = SelectBestReplica(reps, local, "");
     ASSERT_NE(sel, nullptr);
     EXPECT_EQ(
         sel->get_memory_descriptor().buffer_descriptor.transport_endpoint_,
@@ -281,7 +294,7 @@ TEST_F(ReplicaSelectionTest, LocalNoFPrecedesRemoteNoF) {
         MakeNoF("nodeA"),
         MakeNoF("nodeB"),
     };
-    const auto* sel = SelectBestReplica(reps, local);
+    const auto* sel = SelectBestReplica(reps, local, "");
     ASSERT_NE(sel, nullptr);
     EXPECT_EQ(sel->get_nof_descriptor().buffer_descriptor.transport_endpoint_,
               "nodeB");
@@ -293,7 +306,7 @@ TEST_F(ReplicaSelectionTest, RemoteNoFFallbackKeepsMasterOrder) {
         MakeNoF("nodeA"),
         MakeNoF("nodeB"),
     };
-    const auto* sel = SelectBestReplica(reps, local);
+    const auto* sel = SelectBestReplica(reps, local, "");
     ASSERT_NE(sel, nullptr);
     EXPECT_EQ(sel->get_nof_descriptor().buffer_descriptor.transport_endpoint_,
               "nodeA");
@@ -305,7 +318,7 @@ TEST_F(ReplicaSelectionTest, LocalDiskPrecedesDisk) {
         MakeDisk("/remote/object"),
         MakeLocalDisk("nodeA"),
     };
-    const auto* sel = SelectBestReplica(reps, local);
+    const auto* sel = SelectBestReplica(reps, local, "");
     ASSERT_NE(sel, nullptr);
     EXPECT_TRUE(sel->is_local_disk_replica());
 }
@@ -316,7 +329,7 @@ TEST_F(ReplicaSelectionTest, DiskIsLastCompleteFallback) {
         MakeDisk("/remote/object"),
         MakeMemory("nodeA", "rdma", ReplicaStatus::FAILED),
     };
-    const auto* sel = SelectBestReplica(reps, local);
+    const auto* sel = SelectBestReplica(reps, local, "");
     ASSERT_NE(sel, nullptr);
     EXPECT_TRUE(sel->is_disk_replica());
 }
@@ -327,7 +340,7 @@ TEST_F(ReplicaSelectionTest, DfsPrecedesDisk) {
         MakeDisk("/remote/object"),
         MakeDfs("/dfs/object"),
     };
-    const auto* sel = SelectBestReplica(reps, local);
+    const auto* sel = SelectBestReplica(reps, local, "");
     ASSERT_NE(sel, nullptr);
     EXPECT_TRUE(sel->is_dfs_replica());
 }
@@ -338,7 +351,7 @@ TEST_F(ReplicaSelectionTest, LocalDiskPrecedesDfs) {
         MakeDfs("/dfs/object"),
         MakeLocalDisk("nodeA"),
     };
-    const auto* sel = SelectBestReplica(reps, local);
+    const auto* sel = SelectBestReplica(reps, local, "");
     ASSERT_NE(sel, nullptr);
     EXPECT_TRUE(sel->is_local_disk_replica());
 }
@@ -349,7 +362,7 @@ TEST_F(ReplicaSelectionTest, NoCompleteReplicaReturnsNull) {
         MakeMemory("nodeA", "rdma", ReplicaStatus::PROCESSING),
         MakeNoF("nodeB", ReplicaStatus::FAILED),
     };
-    EXPECT_EQ(SelectBestReplica(reps, local), nullptr);
+    EXPECT_EQ(SelectBestReplica(reps, local, ""), nullptr);
 }
 
 // --- Concurrency: verify no data race on SetRemoteReplicaScorer vs reads ---
@@ -399,7 +412,7 @@ TEST_F(ReplicaSelectionTest, ConcurrentSetAndSelectIsRaceFree) {
         readers.emplace_back([&] {
             wait_for_start();
             for (int i = 0; i < kIterations; ++i) {
-                const auto* sel = SelectBestReplica(reps, local);
+                const auto* sel = SelectBestReplica(reps, local, "");
                 if (sel == nullptr) {
                     selection_failed.store(true, std::memory_order_relaxed);
                 }
@@ -418,6 +431,140 @@ TEST_F(ReplicaSelectionTest, ConcurrentSetAndSelectIsRaceFree) {
 
     EXPECT_FALSE(selection_failed.load());
     EXPECT_EQ(read_count.load(), kIterations * kReaderThreads);
+}
+
+// --- Rack affinity (NVLink domain) ---------------------------------------
+
+TEST_F(ReplicaSelectionTest, SameRackMemoryBeatsRemoteRackMemory) {
+    std::unordered_set<std::string> local;  // nothing local
+    std::vector<Replica::Descriptor> reps = {
+        MakeRackMemory("nodeA", "rdma", "rack1"),  // first, but other rack
+        MakeRackMemory("nodeB", "rdma", "rack0"),  // same rack as reader
+    };
+    const auto* sel = SelectBestReplica(reps, local, "rack0");
+    ASSERT_NE(sel, nullptr);
+    EXPECT_EQ(
+        sel->get_memory_descriptor().buffer_descriptor.transport_endpoint_,
+        "nodeB");
+}
+
+TEST_F(ReplicaSelectionTest, LocalMemoryStillBeatsSameRackMemory) {
+    std::unordered_set<std::string> local = {"nodeC"};
+    std::vector<Replica::Descriptor> reps = {
+        MakeRackMemory("nodeB", "rdma", "rack0"),  // same rack
+        MakeRackMemory("nodeC", "tcp", "rack0"),   // local, slower protocol
+    };
+    const auto* sel = SelectBestReplica(reps, local, "rack0");
+    ASSERT_NE(sel, nullptr);
+    EXPECT_EQ(
+        sel->get_memory_descriptor().buffer_descriptor.transport_endpoint_,
+        "nodeC");
+}
+
+TEST_F(ReplicaSelectionTest, CrossRackMemoryUsedWhenNoSameRackReplica) {
+    // Decode must still be able to read over RDMA when the object lives in
+    // another rack entirely.
+    std::unordered_set<std::string> local;
+    std::vector<Replica::Descriptor> reps = {
+        MakeRackMemory("nodeA", "rdma", "rack2"),
+        MakeRackMemory("nodeB", "rdma", "rack3"),
+    };
+    const auto* sel = SelectBestReplica(reps, local, "rack0");
+    ASSERT_NE(sel, nullptr);
+    EXPECT_EQ(
+        sel->get_memory_descriptor().buffer_descriptor.transport_endpoint_,
+        "nodeA");  // first remote wins when scoring is off
+}
+
+TEST_F(ReplicaSelectionTest, EmptyLocalRackIdReproducesLegacyOrder) {
+    // A reader without rack configuration must behave exactly as before:
+    // first remote MEMORY wins regardless of the rack ids present.
+    std::unordered_set<std::string> local;
+    std::vector<Replica::Descriptor> reps = {
+        MakeRackMemory("nodeA", "rdma", "rack1"),
+        MakeRackMemory("nodeB", "rdma", "rack0"),
+    };
+    const auto* sel = SelectBestReplica(reps, local, "");
+    ASSERT_NE(sel, nullptr);
+    EXPECT_EQ(
+        sel->get_memory_descriptor().buffer_descriptor.transport_endpoint_,
+        "nodeA");
+}
+
+TEST_F(ReplicaSelectionTest, ReplicasWithoutRackInfoTreatedAsRemote) {
+    // Older masters do not populate rack_id_; those replicas must not be
+    // mistaken for same-rack copies even when the reader has a rack id.
+    std::unordered_set<std::string> local;
+    std::vector<Replica::Descriptor> reps = {
+        MakeMemory("nodeA", "rdma"),               // no rack info
+        MakeRackMemory("nodeB", "rdma", "rack0"),  // same rack
+    };
+    const auto* sel = SelectBestReplica(reps, local, "rack0");
+    ASSERT_NE(sel, nullptr);
+    EXPECT_EQ(
+        sel->get_memory_descriptor().buffer_descriptor.transport_endpoint_,
+        "nodeB");
+}
+
+TEST_F(ReplicaSelectionTest, LocalNoFStillBeatsSameRackMemory) {
+    // The same-rack tier sits below both local tiers: a local NOF_SSD replica
+    // keeps winning, exactly as it did before rack affinity existed.
+    std::unordered_set<std::string> local = {"nodeC"};
+    std::vector<Replica::Descriptor> reps = {
+        MakeNoF("nodeC"),                          // local NoF
+        MakeRackMemory("nodeB", "rdma", "rack0"),  // same-rack memory
+    };
+    const auto* sel = SelectBestReplica(reps, local, "rack0");
+    ASSERT_NE(sel, nullptr);
+    EXPECT_TRUE(sel->is_nof_replica());
+}
+
+TEST_F(ReplicaSelectionTest, SameRackMemoryBeatsRemoteNoF) {
+    std::unordered_set<std::string> local;
+    std::vector<Replica::Descriptor> reps = {
+        MakeNoF("nodeD"),                          // remote NoF
+        MakeRackMemory("nodeB", "rdma", "rack0"),  // same-rack memory
+    };
+    const auto* sel = SelectBestReplica(reps, local, "rack0");
+    ASSERT_NE(sel, nullptr);
+    ASSERT_TRUE(sel->is_memory_replica());
+    EXPECT_EQ(
+        sel->get_memory_descriptor().buffer_descriptor.transport_endpoint_,
+        "nodeB");
+}
+
+TEST_F(ReplicaSelectionTest, IncompleteSameRackReplicaIsSkipped) {
+    std::unordered_set<std::string> local;
+    std::vector<Replica::Descriptor> reps = {
+        MakeMemory("nodeB", "rdma", ReplicaStatus::PROCESSING, "rack0"),
+        MakeRackMemory("nodeA", "rdma", "rack1"),
+    };
+    const auto* sel = SelectBestReplica(reps, local, "rack0");
+    ASSERT_NE(sel, nullptr);
+    EXPECT_EQ(
+        sel->get_memory_descriptor().buffer_descriptor.transport_endpoint_,
+        "nodeA");
+}
+
+TEST_F(ReplicaSelectionTest, SameRackPreferredOverScoredRemote) {
+    // Scoring only ranks among remote-rack replicas; it must not promote a
+    // cross-rack replica above a same-rack one.
+    // Lower score is better, so nodeA is the scorer's favourite.
+    SetRemoteReplicaScorer([](const Replica::Descriptor& r) {
+        const auto& ep =
+            r.get_memory_descriptor().buffer_descriptor.transport_endpoint_;
+        return ep == "nodeA" ? 0.0 : 100.0;
+    });
+    std::unordered_set<std::string> local;
+    std::vector<Replica::Descriptor> reps = {
+        MakeRackMemory("nodeA", "rdma", "rack1"),  // other rack, top score
+        MakeRackMemory("nodeB", "tcp", "rack0"),   // same rack, low score
+    };
+    const auto* sel = SelectBestReplica(reps, local, "rack0");
+    ASSERT_NE(sel, nullptr);
+    EXPECT_EQ(
+        sel->get_memory_descriptor().buffer_descriptor.transport_endpoint_,
+        "nodeB");
 }
 
 }  // namespace

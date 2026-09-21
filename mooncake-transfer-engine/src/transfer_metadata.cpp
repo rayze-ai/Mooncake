@@ -440,6 +440,11 @@ static int encodeMultiProtocolSegmentDesc(
     segmentJSON["name"] = desc.name;
     segmentJSON["metadata_version"] =
         static_cast<Json::UInt64>(desc.metadata_version);
+    // Omitted when unset so that a peer which never configured a rack sends
+    // nothing rather than an empty string. Both decode to "unknown".
+    if (!desc.rack_id.empty()) {
+        segmentJSON["rack_id"] = desc.rack_id;
+    }
     if (!desc.rdma_server_name.empty()) {
         segmentJSON["rdma_server_name"] = desc.rdma_server_name;
     }
@@ -491,7 +496,7 @@ static int encodeMultiProtocolSegmentDesc(
             bufferJSON["addr"] = static_cast<Json::UInt64>(buffer.addr);
             bufferJSON["shm_name"] = buffer.shm_name;
         } else if (buffer.protocol == "hip" || buffer.protocol == "maca" ||
-                   buffer.protocol == "musa") {
+                   buffer.protocol == "musa" || buffer.protocol == "nvlink") {
             bufferJSON["addr"] = static_cast<Json::UInt64>(buffer.addr);
             bufferJSON["shm_name"] = buffer.shm_name;
         }
@@ -524,7 +529,7 @@ int TransferMetadata::encodeSegmentDesc(const SegmentDesc &desc,
         for (const auto &proto : protocols) {
             if (proto != "cxl" && proto != "tcp" && proto != "rdma" &&
                 proto != "hip" && proto != "maca" && proto != "musa" &&
-                proto != "shm") {
+                proto != "shm" && proto != "nvlink") {
                 is_multi_protocol = false;
                 break;
             }
@@ -532,8 +537,8 @@ int TransferMetadata::encodeSegmentDesc(const SegmentDesc &desc,
         if (!is_multi_protocol) {
             LOG(ERROR) << "Unsupported multi-protocol combination: "
                        << desc.protocol
-                       << ". Only cxl, tcp, rdma, hip, maca, musa and shm may "
-                          "be combined.";
+                       << ". Only cxl, tcp, rdma, hip, maca, musa, shm and "
+                          "nvlink may be combined.";
             return ERR_INVALID_ARGUMENT;
         }
     }
@@ -554,6 +559,11 @@ int TransferMetadata::encodeSegmentDesc(const SegmentDesc &desc,
     segmentJSON["tcp_data_port"] = desc.tcp_data_port;
     segmentJSON["tcp_proto_version"] = desc.tcp_proto_version;
     segmentJSON["timestamp"] = getCurrentDateTime();
+    // See the note in encodeMultiProtocolSegmentDesc: absent means "no rack
+    // configured", which the NVLink gate treats as unknown, not as a match.
+    if (!desc.rack_id.empty()) {
+        segmentJSON["rack_id"] = desc.rack_id;
+    }
     if (!desc.rdma_server_name.empty()) {
         segmentJSON["rdma_server_name"] = desc.rdma_server_name;
     }
@@ -797,6 +807,11 @@ decodeMultiProtocolSegmentDesc(Json::Value &segmentJSON,
         segmentJSON["tcp_data_host"].isString()) {
         desc->tcp_data_host = segmentJSON["tcp_data_host"].asString();
     }
+    // Guarded so that peers predating this field decode as empty (unknown)
+    // instead of failing; see rackReachabilityForNvlink().
+    if (segmentJSON.isMember("rack_id") && segmentJSON["rack_id"].isString()) {
+        desc->rack_id = segmentJSON["rack_id"].asString();
+    }
     desc->tcp_data_port = segmentJSON["tcp_data_port"].asInt();
     desc->tcp_proto_version = segmentJSON.isMember("tcp_proto_version")
                                   ? segmentJSON["tcp_proto_version"].asInt()
@@ -964,7 +979,7 @@ TransferMetadata::decodeSegmentDesc(Json::Value &segmentJSON,
                 std::string proto = protocolStr.asString();
                 if (proto != "cxl" && proto != "tcp" && proto != "rdma" &&
                     proto != "hip" && proto != "maca" && proto != "musa" &&
-                    proto != "shm") {
+                    proto != "shm" && proto != "nvlink") {
                     is_multi_protocol = false;
                     break;
                 }
@@ -973,8 +988,8 @@ TransferMetadata::decodeSegmentDesc(Json::Value &segmentJSON,
                 LOG(ERROR)
                     << "Unsupported multi-protocol combination in segment: "
                     << segment_name
-                    << ". Only cxl, tcp, rdma, hip, maca, musa and shm may be "
-                       "combined.";
+                    << ". Only cxl, tcp, rdma, hip, maca, musa, shm and "
+                       "nvlink may be combined.";
                 return nullptr;
             }
         }
@@ -998,6 +1013,11 @@ TransferMetadata::decodeSegmentDesc(Json::Value &segmentJSON,
     if (segmentJSON.isMember("tcp_data_host") &&
         segmentJSON["tcp_data_host"].isString()) {
         desc->tcp_data_host = segmentJSON["tcp_data_host"].asString();
+    }
+    // Guarded so that peers predating this field decode as empty (unknown)
+    // instead of failing; see rackReachabilityForNvlink().
+    if (segmentJSON.isMember("rack_id") && segmentJSON["rack_id"].isString()) {
+        desc->rack_id = segmentJSON["rack_id"].asString();
     }
     desc->tcp_data_port = segmentJSON["tcp_data_port"].asInt();
     desc->tcp_proto_version = segmentJSON.isMember("tcp_proto_version")
@@ -1700,6 +1720,14 @@ int TransferMetadata::updateLocalSegmentDesc(uint64_t segment_id) {
 int TransferMetadata::addLocalSegment(SegmentID segment_id,
                                       const std::string &segment_name,
                                       std::shared_ptr<SegmentDesc> &&desc) {
+    // Stamped here rather than in each transport's install(): every transport
+    // builds its own local SegmentDesc but they all publish through this one
+    // entry, so this is the single place that cannot be forgotten by a new
+    // transport. A desc that already carries a rack keeps it, so a caller can
+    // still override explicitly.
+    if (desc && desc->rack_id.empty()) {
+        desc->rack_id = globalConfig().rack_id;
+    }
     RWSpinlock::WriteGuard guard(segment_lock_);
     segment_id_to_desc_map_[segment_id] = desc;
     segment_name_to_id_map_[segment_name] = segment_id;

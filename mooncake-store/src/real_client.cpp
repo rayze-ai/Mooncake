@@ -462,30 +462,46 @@ inline bool is_object_range_overflow(size_t offset, size_t size, size_t limit) {
     return size > limit || offset > limit - size;
 }
 
+// Tiering matches SelectBestReplica: local endpoint first, then the same
+// rack (NVLink domain), then any remote MEMORY replica. An empty
+// local_rack_id, or replicas without rack info, reproduce the original
+// local-then-any behaviour.
 inline const Replica::Descriptor *SelectCompleteMemoryReplica(
     const std::vector<Replica::Descriptor> &replicas,
-    const std::unordered_set<std::string> &local_endpoints) {
+    const std::unordered_set<std::string> &local_endpoints,
+    const std::string &local_rack_id) {
     const Replica::Descriptor *first_memory = nullptr;
+    const Replica::Descriptor *first_same_rack_memory = nullptr;
     for (const auto &r : replicas) {
         if (r.status != ReplicaStatus::COMPLETE || !r.is_memory_replica()) {
             continue;
         }
-        if (local_endpoints.count(r.get_memory_descriptor()
-                                      .buffer_descriptor.transport_endpoint_)) {
+        const auto &buf = r.get_memory_descriptor().buffer_descriptor;
+        if (local_endpoints.count(buf.transport_endpoint_)) {
             return &r;
+        }
+        if (!local_rack_id.empty() && buf.rack_id() == local_rack_id) {
+            if (!first_same_rack_memory) {
+                first_same_rack_memory = &r;
+            }
+            continue;
         }
         if (!first_memory) {
             first_memory = &r;
         }
+    }
+    if (first_same_rack_memory) {
+        return first_same_rack_memory;
     }
     return first_memory;
 }
 
 inline const Replica::Descriptor *SelectSessionReplica(
     const std::vector<Replica::Descriptor> &replicas,
-    const std::unordered_set<std::string> &local_endpoints) {
-    if (const auto *memory =
-            SelectCompleteMemoryReplica(replicas, local_endpoints)) {
+    const std::unordered_set<std::string> &local_endpoints,
+    const std::string &local_rack_id) {
+    if (const auto *memory = SelectCompleteMemoryReplica(
+            replicas, local_endpoints, local_rack_id)) {
         return memory;
     }
 
@@ -850,7 +866,8 @@ tl::expected<void, ErrorCode> RealClient::setup_internal(
     const std::string &ipc_socket_path, int local_rpc_port,
     bool enable_ssd_offload, bool start_offload_rpc_server,
     const std::string &ssd_offload_path, const std::string &tenant_id,
-    bool enable_client_http_server, int client_http_port) {
+    bool enable_client_http_server, int client_http_port,
+    const std::string &rack_id, bool strict_rack) {
     this->protocol = protocol;
     this->ipc_socket_path_ = ipc_socket_path;
 #ifdef USE_ASCEND_DIRECT
@@ -949,6 +966,14 @@ tl::expected<void, ErrorCode> RealClient::setup_internal(
             return tl::unexpected(ErrorCode::INTERNAL_ERROR);
         }
     }
+
+    // Rack affinity must be configured before any segment is mounted below, so
+    // the mounted segments carry the rack identity the master indexes.
+    if (strict_rack && rack_id.empty()) {
+        LOG(WARNING) << "strict_rack=true but rack_id is empty, rack affinity "
+                        "stays disabled";
+    }
+    client_->SetRackAffinity(rack_id, strict_rack);
 
     // Local_buffer_size is allowed to be 0, but we only register memory when
     // local_buffer_size > 0. Invoke ibv_reg_mr() with size=0 is UB, and may
@@ -1414,11 +1439,17 @@ tl::expected<void, ErrorCode> RealClient::setup_internal(
     }
     int client_http_port = client_http_port_opt.value();
 
+    // Rack affinity (NVLink-domain aware placement). Absent keys keep the
+    // feature disabled, which reproduces the pre-rack behaviour exactly.
+    std::string rack_id = get_config(config, CONFIG_KEY_RACK_ID);
+    bool strict_rack = get_config_bool(config, CONFIG_KEY_STRICT_RACK, false);
+
     return setup_internal(local_hostname, metadata_server, global_segment_size,
                           local_buffer_size, protocol, rdma_devices,
                           master_server_addr, nullptr, ipc_socket_path, 50052,
                           enable_ssd_offload, true, ssd_offload_path, tenant_id,
-                          enable_client_http_server, client_http_port);
+                          enable_client_http_server, client_http_port, rack_id,
+                          strict_rack);
 }
 
 tl::expected<void, ErrorCode> RealClient::initAll_internal(
@@ -3330,7 +3361,8 @@ std::shared_ptr<BufferHandle> RealClient::get_buffer_internal(
     // LOCAL_DISK data is on a remote node's SSD — must use offload RPC.
     // MEMORY / DISK / DFS are handled via client_->Get below.
     auto local_endpoints = client_->GetLocalEndpoints();
-    const auto *best_replica = SelectBestReplica(replica_list, local_endpoints);
+    const auto *best_replica = SelectBestReplica(replica_list, local_endpoints,
+                                                client_->GetRackId());
     if (!best_replica) {
         LOG(ERROR) << "No usable replica for key: " << key;
         return nullptr;
@@ -3703,7 +3735,8 @@ RealClient::batch_get_buffer_internal(
         // Select best replica: prefer local MEMORY, any MEMORY, local NOF,
         // any NOF, LOCAL_DISK, DFS, then DISK.
         const auto *best_replica =
-            SelectBestReplica(query_result_values.replicas, local_endpoints);
+            SelectBestReplica(query_result_values.replicas, local_endpoints,
+                              client_->GetRackId());
         if (!best_replica) {
             LOG(ERROR) << "No usable replica for key: " << key;
             continue;
@@ -4708,7 +4741,8 @@ RealClient::build_ranged_read_metadata_from_query_result(
     }
 
     auto local_endpoints = client_->GetLocalEndpoints();
-    const auto *best_replica = SelectBestReplica(replica_list, local_endpoints);
+    const auto *best_replica = SelectBestReplica(replica_list, local_endpoints,
+                                                client_->GetRackId());
     if (!best_replica) {
         LOG(ERROR) << "No usable replica for key: " << key;
         return tl::unexpected(ErrorCode::INVALID_REPLICA);
@@ -5849,7 +5883,8 @@ RealClient::batch_get_into_internal(
         // Select best replica: prefer local MEMORY, any MEMORY, local NOF,
         // any NOF, LOCAL_DISK, DFS, then DISK.
         const auto *best_replica =
-            SelectBestReplica(query_result_values.replicas, local_endpoints);
+            SelectBestReplica(query_result_values.replicas, local_endpoints,
+                              client_->GetRackId());
         if (!best_replica) {
             LOG(ERROR) << "No usable replica for key: " << key;
             results[i] = tl::unexpected(ErrorCode::INVALID_REPLICA);
@@ -6279,7 +6314,8 @@ std::vector<int> RealClient::batch_get_session_start(
         }
 
         const auto *replica =
-            SelectSessionReplica(query_result.replicas, local_endpoints);
+            SelectSessionReplica(query_result.replicas, local_endpoints,
+                                 client_->GetRackId());
         if (!replica) {
             LOG(ERROR) << "No supported complete replica for key: " << keys[i];
             results[i] = static_cast<int>(toInt(ErrorCode::INVALID_REPLICA));
@@ -7282,7 +7318,8 @@ RealClient::batch_get_into_multi_buffers_internal(
         // any NOF, LOCAL_DISK, DFS, then DISK. Master may return multiple
         // replicas in any order, so always scan.
         const auto *best_replica =
-            SelectBestReplica(query_result_values.replicas, local_endpoints);
+            SelectBestReplica(query_result_values.replicas, local_endpoints,
+                              client_->GetRackId());
         if (!best_replica) {
             LOG(ERROR) << "No usable replica for key: " << key;
             results.emplace_back(tl::unexpected(ErrorCode::INVALID_REPLICA));

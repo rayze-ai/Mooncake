@@ -113,22 +113,39 @@ inline const Replica::Descriptor *PickBestRemoteMemory(
 }
 
 // Select the best replica from a list: prefer local MEMORY, local NOF_SSD,
-// remote MEMORY, remote NOF_SSD, LOCAL_DISK, DFS, then DISK. Master may return
-// replicas in any order, so we always scan. When scoring is enabled and there
-// are multiple remote MEMORY replicas, the best-scoring one is chosen instead
-// of the first encountered.
+// then same-rack MEMORY (when local_rack_id is set), remote MEMORY, remote
+// NOF_SSD, LOCAL_DISK, DFS, then DISK. Master may return replicas in any
+// order, so we always scan. When scoring is enabled and there are multiple
+// remote MEMORY replicas, the best-scoring one is chosen instead of the first
+// encountered.
+//
+// Rack affinity: replicas whose buffer descriptor carries a rack_id_ equal to
+// local_rack_id form the same-rack tier (NVLink domain). The tier sits
+// between the local tiers and remote MEMORY: a same-rack copy is fetched over
+// NVLink, a remote-rack copy over RDMA. Note that a *local* NOF_SSD replica
+// still wins over a same-rack MEMORY replica, unchanged from before this
+// tier existed. Replicas without rack info (older masters) behave as remote,
+// so an empty local_rack_id reproduces the historical behaviour exactly.
+// `local_rack_id` is deliberately not defaulted: a caller that forgets it would
+// silently lose rack affinity with nothing to catch it at compile time. Pass ""
+// to opt out explicitly.
 inline const Replica::Descriptor *SelectBestReplica(
     const std::vector<Replica::Descriptor> &replicas,
-    const std::unordered_set<std::string> &local_endpoints) {
+    const std::unordered_set<std::string> &local_endpoints,
+    const std::string &local_rack_id) {
     const Replica::Descriptor *first_memory = nullptr;
+    const Replica::Descriptor *first_same_rack_memory = nullptr;
     const Replica::Descriptor *first_nof = nullptr;
     for (const auto &r : replicas) {
         if (r.status != ReplicaStatus::COMPLETE) continue;
         if (r.is_memory_replica()) {
-            if (local_endpoints.count(
-                    r.get_memory_descriptor()
-                        .buffer_descriptor.transport_endpoint_)) {
+            const auto &buf = r.get_memory_descriptor().buffer_descriptor;
+            if (local_endpoints.count(buf.transport_endpoint_)) {
                 return &r;  // local MEMORY — best case
+            }
+            if (!local_rack_id.empty() && buf.rack_id() == local_rack_id) {
+                if (!first_same_rack_memory) first_same_rack_memory = &r;
+                continue;  // same-rack beats any remote MEMORY
             }
             if (!first_memory) first_memory = &r;
         } else if (r.is_nof_replica()) {
@@ -140,8 +157,10 @@ inline const Replica::Descriptor *SelectBestReplica(
             if (!first_nof) first_nof = &r;
         }
     }
-    // No local replica. Among remote MEMORY replicas, optionally pick the
-    // best-scoring one instead of the first encountered (issue #2516).
+    if (first_same_rack_memory) return first_same_rack_memory;
+    // No local or same-rack replica. Among remote MEMORY replicas, optionally
+    // pick the best-scoring one instead of the first encountered
+    // (issue #2516).
     if (first_memory && RemoteReplicaScoringEnabled()) {
         if (const auto *scored =
                 PickBestRemoteMemory(replicas, local_endpoints)) {

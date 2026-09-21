@@ -798,6 +798,25 @@ void loadGlobalConfig(GlobalConfig& config) {
         }
     }
 
+    // MC_RACK_ID is the TE-native name; MOONCAKE_RACK_ID is accepted as a
+    // fallback because the Store config already reads it, and a deployment
+    // that sets one should not have to set both. Whitespace-only values are
+    // treated as unset so that a stray quote in a YAML env does not become a
+    // rack identity that matches nothing.
+    for (const char* rack_key : {"MC_RACK_ID", "MOONCAKE_RACK_ID"}) {
+        const char* rack_id_env = std::getenv(rack_key);
+        if (!rack_id_env || !*rack_id_env) continue;
+        std::string val(rack_id_env);
+        auto l = val.find_first_not_of(" \t\r\n");
+        auto r = val.find_last_not_of(" \t\r\n");
+        if (l == std::string::npos) {
+            LOG(WARNING) << "Ignore " << rack_key << ": value is blank";
+            continue;
+        }
+        config.rack_id = val.substr(l, r - l + 1);
+        break;
+    }
+
     const char* mlx5_qp_lag_port_balance_env =
         std::getenv("MC_MLX5_QP_LAG_PORT_BALANCE");
     if (mlx5_qp_lag_port_balance_env && *mlx5_qp_lag_port_balance_env) {

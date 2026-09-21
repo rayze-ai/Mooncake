@@ -222,6 +222,12 @@ constexpr const char* CONFIG_KEY_TENANT_ID = "tenant_id";
 constexpr const char* CONFIG_KEY_ENABLE_CLIENT_HTTP_SERVER =
     "enable_client_http_server";
 constexpr const char* CONFIG_KEY_CLIENT_HTTP_PORT = "client_http_port";
+// Rack affinity: identifier of the rack (NVLink domain) this client belongs
+// to. Empty means rack affinity is disabled.
+constexpr const char* CONFIG_KEY_RACK_ID = "rack_id";
+// When true, Put only allocates on segments whose rack_id matches the
+// client's rack_id (no cross-rack fallback). Requires rack_id to be set.
+constexpr const char* CONFIG_KEY_STRICT_RACK = "strict_rack";
 
 // Store client configuration defaults
 static constexpr size_t DEFAULT_GLOBAL_SEGMENT_SIZE = 1024 * 1024 * 16;  // 16MB
@@ -446,10 +452,37 @@ struct Segment {
     std::string te_endpoint{};
     std::string protocol;
     std::string host_id{};
+    // Rack (NVLink domain) identifier for rack-affinity placement and
+    // rack-aware replica selection. Unset when rack affinity is unused.
+    //
+    // struct_pack::compatible keeps the struct's type hash stable so a client
+    // and master on different versions can still exchange MountSegment
+    // requests; a plain member would change the hash and break that. See the
+    // note on AllocatedBuffer::Descriptor::rack_id_.
+    struct_pack::compatible<std::string, 1> rack_id{};
     Segment() = default;
-    bool operator==(const Segment&) const = default;
+
+    // Spelled out rather than defaulted: struct_pack::compatible derives from
+    // std::optional, which makes a defaulted operator== ambiguous (and
+    // therefore implicitly deleted), so the default would compile here and
+    // then fail at the first caller. Comparing through RackId() also makes an
+    // unset rack_id and an explicitly empty one equal, which is what the rest
+    // of the code means by "no rack".
+    bool operator==(const Segment& other) const {
+        return id == other.id && name == other.name && base == other.base &&
+               size == other.size && te_endpoint == other.te_endpoint &&
+               protocol == other.protocol && host_id == other.host_id &&
+               RackId() == other.RackId();
+    }
+
+    // Empty when the peer predates rack affinity or rack affinity is off.
+    [[nodiscard]] const std::string& RackId() const noexcept {
+        static const std::string kNoRack;
+        return rack_id.has_value() ? *rack_id : kNoRack;
+    }
 };
-YLT_REFL(Segment, id, name, base, size, te_endpoint, protocol, host_id);
+YLT_REFL(Segment, id, name, base, size, te_endpoint, protocol, host_id,
+         rack_id);
 
 /**
  * @brief Allocation strategy type for segment allocation

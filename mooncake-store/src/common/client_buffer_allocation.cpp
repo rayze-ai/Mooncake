@@ -13,6 +13,20 @@
 #ifdef USE_INTRA_NVLINK
 #include "gpu_vendor/intra_nvlink.h"
 #endif
+#ifdef USE_VRAM_SEGMENT
+#include "config/vram_fabric_config.h"
+#endif
+#if defined(USE_VRAM_SEGMENT) && defined(USE_MNNVL)
+#include "gpu_vendor/mnnvl.h"
+// mnnvl.h dispatches to a vendor backend, and only the NVLink one offers an
+// alignment-aware fabric allocation (the HIP/MUSA/UBShmem backends keep the
+// single-argument form, and CMake does not even build nvlink_transport for a
+// USE_MNNVL+USE_HIP configuration). Gate the fabric VRAM path on the backend
+// actually providing it so those combinations still compile.
+#ifdef MOONCAKE_HAS_FABRIC_ALIGNED_ALLOC
+#define MOONCAKE_STORE_FABRIC_VRAM 1
+#endif
+#endif
 #if defined(USE_ASCEND_DIRECT) || defined(USE_UBSHMEM)
 #include "ascend_allocator.h"
 #endif
@@ -27,8 +41,29 @@ namespace mooncake {
 namespace {
 
 #ifdef USE_VRAM_SEGMENT
+#ifdef MOONCAKE_STORE_FABRIC_VRAM
+// Whether this buffer should be allocated as an exportable fabric allocation
+// rather than with cudaMalloc. Only meaningful for the cross-node NVLink
+// protocol: nvlink_intra reaches peers through CUDA IPC handles instead, and
+// every other protocol reads the segment over RDMA/TCP, where a fabric handle
+// buys nothing.
+//
+// The environment is read once so a segment and its later release agree on
+// which allocator owns the memory, even if the variable changes in between.
+bool use_fabric_vram(const std::string &protocol) {
+    if (protocol != "nvlink") {
+        return false;
+    }
+    static const bool enabled = VramFabricConfig::IsEnabledFromEnvironment();
+    return enabled;
+}
+#endif
+
 tl::expected<void *, std::string> allocate_vram_memory(
-    size_t total_size, const std::string &protocol) {
+    size_t total_size, const std::string &protocol, size_t alignment) {
+    // Only the fabric branch below consumes the alignment; cudaMalloc and the
+    // intra-node allocator have no way to accept one.
+    (void)alignment;
     cudaError_t res;
     int device;
     void *ptr = nullptr;
@@ -47,6 +82,41 @@ tl::expected<void *, std::string> allocate_vram_memory(
         return tl::make_unexpected("Protocol not supported");
 #endif
     }
+#ifndef MOONCAKE_STORE_FABRIC_VRAM
+    // The switch is set but this build cannot honor it, so the segment is about
+    // to fall back to cudaMalloc and will register nothing over NVLink. Say so
+    // loudly rather than let the operator believe the request took effect --
+    // that silence is the exact failure this feature exists to remove.
+    if (protocol == "nvlink" && VramFabricConfig::IsEnabledFromEnvironment()) {
+        LOG(WARNING) << "MC_STORE_VRAM_FABRIC is set but this build provides no "
+                        "alignment-aware fabric allocator (needs USE_MNNVL "
+                        "without USE_HIP/USE_MUSA/USE_UBSHMEM). Falling back to "
+                        "cudaMalloc: the segment will NOT be reachable over "
+                        "NVLink from another node.";
+    }
+#endif
+#ifdef MOONCAKE_STORE_FABRIC_VRAM
+    if (use_fabric_vram(protocol)) {
+        // Pass the caller's alignment through: the segment is handed to
+        // cachelib, which requires a Slab::kSize-aligned base, and the CUDA
+        // allocation granularity alone does not guarantee that.
+        ptr = allocateFabricMemoryAligned(total_size, alignment);
+        if (ptr == nullptr) {
+            LOG(ERROR) << "VRAM Segment fabric allocation failed for "
+                       << total_size
+                       << " bytes. Check that every device reports fabric "
+                          "handle support and that an IMEX domain is "
+                          "configured, or unset MC_STORE_VRAM_FABRIC to fall "
+                          "back to cudaMalloc.";
+            return tl::make_unexpected(
+                "VRAM Segment fabric allocation failed.");
+        }
+        LOG(INFO) << "VRAM Segment allocated " << total_size
+                  << " bytes as an exportable fabric allocation, base=" << ptr
+                  << ", alignment=" << alignment;
+        return ptr;
+    }
+#endif
     res = cudaMalloc((void **)&ptr, total_size);
     if (res != cudaSuccess) {
         LOG(ERROR) << "VRAM Segment cudaMalloc failed.";
@@ -119,7 +189,7 @@ void *allocate_buffer_allocator_memory(size_t total_size,
     }
 #endif
 #ifdef USE_VRAM_SEGMENT
-    auto ret = allocate_vram_memory(total_size, protocol);
+    auto ret = allocate_vram_memory(total_size, protocol, alignment);
     if (!ret) {
         LOG(ERROR) << ret.error();
         return nullptr;
@@ -157,11 +227,24 @@ void free_memory(const std::string &protocol, void *ptr, bool use_spdk_dma) {
     }
 #endif
 #ifdef USE_VRAM_SEGMENT
-#ifdef USE_INTRA_NVLINK
-    freeFabricMemory_intra(ptr);
-#else
-    cudaFree(ptr);
+    // Mirror allocate_vram_memory() exactly. A fabric allocation is backed by
+    // cuMemCreate, so releasing it with cudaFree would leak both the physical
+    // handle and the reserved VA range; conversely freePinnedLocalMemory()
+    // cannot release a cudaMalloc'd pointer. The branch must therefore key off
+    // the same protocol and switch the allocation did, not just the build flags.
+#ifdef MOONCAKE_STORE_FABRIC_VRAM
+    if (use_fabric_vram(protocol)) {
+        freeFabricMemory(ptr);
+        return;
+    }
 #endif
+#ifdef USE_INTRA_NVLINK
+    if (protocol == "nvlink_intra") {
+        freeFabricMemory_intra(ptr);
+        return;
+    }
+#endif
+    cudaFree(ptr);
     return;
 #endif
     free(ptr);

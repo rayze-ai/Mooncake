@@ -38,4 +38,11 @@
     mooncake::NvlinkTransport::allocatePinnedLocalMemory(size)
 #define freeFabricMemory(addr) \
     mooncake::NvlinkTransport::freePinnedLocalMemory(addr)
+// Only the NVLink (MNNVL) backend exposes an alignment-aware allocation. The
+// other vendors above keep the single-argument form, so a caller that needs a
+// specific alignment must guard on MOONCAKE_HAS_FABRIC_ALIGNED_ALLOC rather
+// than assume this macro exists.
+#define MOONCAKE_HAS_FABRIC_ALIGNED_ALLOC 1
+#define allocateFabricMemoryAligned(size, alignment) \
+    mooncake::NvlinkTransport::allocatePinnedLocalMemory(size, alignment)
 #endif

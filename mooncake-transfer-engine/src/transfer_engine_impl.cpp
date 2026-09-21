@@ -430,6 +430,67 @@ int TransferEngineImpl::init(const std::string& metadata_conn_string,
             }
             LOG(INFO) << "Using " << gpu_p2p_name << " transport "
                       << "(forced or no HCA detected)";
+            // Startup consistency check for the rack gate. A fabric-mode
+            // NVLink transport with no rack id configured has an inert gate:
+            // every target decodes as "unknown rack", the request is let
+            // through, and a genuinely cross-rack peer surfaces as an opaque
+            // cuMemImportFromShareableHandle failure at first transfer rather
+            // than as a routing decision. Say so at startup, where it is
+            // actionable.
+            if (globalConfig().rack_id.empty() &&
+                multi_transports_->nvlinkUsesFabricMem()) {
+                LOG(WARNING)
+                    << gpu_p2p_name
+                    << " is using fabric handles but no rack id is configured "
+                       "(MC_RACK_ID / MOONCAKE_RACK_ID). Cross-rack targets "
+                       "cannot be detected, so they will fail at import time "
+                       "instead of falling back. Set the same rack id on every "
+                       "node of one NVLink domain, and a different one per "
+                       "domain.";
+            } else if (!globalConfig().rack_id.empty()) {
+                LOG(INFO) << "NVLink rack gate active, local rack_id=\""
+                          << globalConfig().rack_id << "\"";
+            }
+            // An NVLink fabric handle is importable only inside one NVLink
+            // domain, so a cross-rack target has to leave this transport. The
+            // routing gate in MultiTransport::selectTransport can only redirect
+            // to a transport that is actually installed, which is why RDMA is
+            // installed alongside rather than instead. Without this, a
+            // mis-set MC_RACK_ID (or a genuinely cross-rack peer) turns a slow
+            // path into an unusable one.
+            //
+            // The dual install is only useful in a multi-protocol build: the
+            // local SegmentDesc carries a single protocol string otherwise, so
+            // whichever transport installs second overwrites the first and
+            // peers never learn this node speaks both. The gate would then
+            // redirect to an RDMA transport the peer published no keys for.
+            const bool want_rdma_fallback =
+                (!no_hca || force_hca) &&
+                getenv("MC_NVLINK_NO_RDMA_FALLBACK") == nullptr;
+#ifdef ENABLE_MULTI_PROTOCOL
+            if (want_rdma_fallback) {
+                Transport* rdma_t = multi_transports_->installTransport(
+                    "rdma", local_topology_);
+                if (!rdma_t) {
+                    LOG(ERROR) << "Failed to install RDMA transport alongside "
+                               << gpu_p2p_name;
+                    return -1;
+                }
+                LOG(INFO) << "Also using RDMA transport as the cross-rack "
+                             "fallback for "
+                          << gpu_p2p_name;
+            }
+#else
+            if (want_rdma_fallback) {
+                LOG(WARNING)
+                    << gpu_p2p_name
+                    << " has no cross-rack fallback in this build: RDMA can "
+                       "only be installed alongside it when "
+                       "ENABLE_MULTI_PROTOCOL is on, because the segment "
+                       "descriptor otherwise advertises a single protocol. A "
+                       "cross-rack target will fail rather than downgrade.";
+            }
+#endif
         } else if (!no_hca || force_hca) {
             Transport* t =
                 multi_transports_->installTransport("rdma", local_topology_);

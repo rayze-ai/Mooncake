@@ -121,6 +121,14 @@ class TransferMetadata {
         std::string name;
         std::string protocol;
         uint64_t metadata_version{0};
+        // NVLink-domain identity of the node owning this segment, echoing the
+        // rack_id the deployment assigns (MC_RACK_ID / MOONCAKE_RACK_ID). A
+        // cross-node NVLink fabric handle can only be imported inside one
+        // domain, so the initiator compares this against its own rack before
+        // selecting the nvlink transport. Empty means "not configured", which
+        // the gate treats as unknown rather than as a match: see
+        // rackReachabilityForNvlink() in multi_transport_locality.h.
+        std::string rack_id;
         // this is for rdma/shm/urma
         std::vector<DeviceDesc> devices;
         Topology topology;

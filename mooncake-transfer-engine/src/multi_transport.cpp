@@ -594,6 +594,38 @@ Transport* MultiTransport::installTransport(const std::string& proto,
     return transport;
 }
 
+// Whether the locally installed nvlink transport exports fabric handles (a
+// cross-host, single-NVLink-domain form) or cudaIpcMemHandle_t (same-host
+// only). Decided by device capability plus MC_USE_NVLINK_IPC at install time,
+// so it is a property of this node, not of the request.
+bool MultiTransport::nvlinkUsesFabric() const {
+#ifdef USE_MNNVL
+    auto it = transport_map_.find("nvlink");
+    if (it == transport_map_.end() || !it->second) return false;
+    auto* nvlink = dynamic_cast<NvlinkTransport*>(it->second.get());
+    return nvlink && nvlink->usesFabricMem();
+#else
+    return false;
+#endif
+}
+
+// Whether a request to target_segment_desc may be routed over nvlink.
+// In fabric mode the limit is the NVLink domain, so compare racks: only a
+// positive statement that the racks differ blocks it (an unset rack on either
+// side means nothing was stated, and a same-host target is always fine).
+// In IPC mode the limit is the host, matching the existing hip/musa/shm gate.
+bool MultiTransport::nvlinkReachable(
+    const TransferMetadata::SegmentDesc& target_segment_desc) const {
+    if (!nvlinkUsesFabric()) {
+        return isLocalIpcReachableTarget(target_segment_desc.name,
+                                        local_server_name_);
+    }
+    return rackReachabilityForNvlink(
+               target_segment_desc.name, local_server_name_,
+               target_segment_desc.rack_id, globalConfig().rack_id) !=
+           RackReachability::Unreachable;
+}
+
 Status MultiTransport::selectTransport(const TransferRequest& entry,
                                        Transport*& transport) {
     auto target_segment_desc = metadata_->getSegmentDescByID(entry.target_id);
@@ -620,6 +652,12 @@ Status MultiTransport::selectTransport(const TransferRequest& entry,
             if (p == "maca") return std::getenv("MC_DISABLE_MACA") ? 0 : 4;
             if (p == "musa") return std::getenv("MC_DISABLE_MUSA") ? 0 : 4;
             if (p == "shm") return 4;
+            // nvlink reaches farther than the GPU-IPC group above (a fabric
+            // handle crosses hosts inside one NVLink domain) but is gated on
+            // rack reachability below, so a buffer that survives the gate is
+            // always preferable to rdma. It sits under the IPC group only
+            // because same-host IPC needs no fabric import at all.
+            if (p == "nvlink") return std::getenv("MC_DISABLE_NVLINK") ? 0 : 3;
             if (p == "cxl") return 3;
             if (p == "rdma") return 2;
             if (p == "tcp") return 1;
@@ -633,6 +671,7 @@ Status MultiTransport::selectTransport(const TransferRequest& entry,
         // without requiring the operator to set MC_DISABLE_HIP.
         const bool local_ipc_reachable = isLocalIpcReachableTarget(
             target_segment_desc->name, local_server_name_);
+        const bool nvlink_reachable = nvlinkReachable(*target_segment_desc);
         std::string chosen;
         int chosen_priority = -1;
         for (const auto& buffer : target_segment_desc->buffers) {
@@ -647,6 +686,9 @@ Status MultiTransport::selectTransport(const TransferRequest& entry,
                 if ((buffer.protocol == "hip" || buffer.protocol == "musa" ||
                      buffer.protocol == "shm") &&
                     !local_ipc_reachable) {
+                    continue;
+                }
+                if (buffer.protocol == "nvlink" && !nvlink_reachable) {
                     continue;
                 }
                 int priority = protocol_priority(buffer.protocol);
@@ -674,6 +716,7 @@ Status MultiTransport::selectTransport(const TransferRequest& entry,
             LOG(INFO) << "MultiTransport::selectTransport route: target_id="
                       << entry.target_id << " segment_protocol=\"" << proto
                       << "\" local_ipc_reachable=" << local_ipc_reachable
+                      << " nvlink_reachable=" << nvlink_reachable
                       << " chosen=" << chosen;
         }
         transport = transport_map_[chosen].get();
@@ -688,6 +731,36 @@ Status MultiTransport::selectTransport(const TransferRequest& entry,
         proto = "ascend";
     }
 #endif
+    // Single-protocol nvlink segment: the fabric handle is only importable
+    // inside one NVLink domain, so a cross-rack target must leave nvlink even
+    // though the segment advertises nothing else. Downgrade to whatever
+    // cross-rack transport is installed locally; erroring out here is better
+    // than handing the request to nvlink, where it surfaces later as an
+    // opaque fabric-import failure inside submitTransfer.
+    if (proto == "nvlink" && !nvlinkReachable(*target_segment_desc)) {
+        const std::string why =
+            nvlinkUsesFabric()
+                ? ("target rack \"" + target_segment_desc->rack_id +
+                   "\" differs from local rack \"" + globalConfig().rack_id +
+                   "\" and an NVLink fabric handle is not importable across "
+                   "NVLink domains")
+                : ("nvlink is in CUDA-IPC mode, which cannot reach another "
+                   "host");
+        for (const char* candidate : {"rdma", "rdma_twosided", "tcp"}) {
+            if (transport_map_.count(candidate)) {
+                LOG_FIRST_N(WARNING, 10)
+                    << "Target segment " << target_segment_desc->name
+                    << " unreachable over nvlink: " << why << "; using "
+                    << candidate;
+                transport = transport_map_[candidate].get();
+                return Status::OK();
+            }
+        }
+        return Status::NotSupportedTransport(
+            "Target segment " + target_segment_desc->name +
+            " unreachable over nvlink: " + why +
+            "; no cross-host transport (rdma/tcp) is installed");
+    }
     // RdmaTwoSidedTransport still publishes segment protocol "rdma" (one-sided
     // memory path). Route those segments to the installed twosided transport.
     if (!transport_map_.count(proto) && proto == "rdma" &&
@@ -723,6 +796,27 @@ Status MultiTransport::mp_selectTransport(const TransferRequest& entry,
     // hip GPU IPC and POSIX SHM cannot reach a remote host; downgrade an
     // explicit intra-node preference to a cross-host-capable transport
     // (mirrors the locality gate in selectTransport). Prefer rdma, then tcp.
+    if (preferred_proto == "nvlink" &&
+        !nvlinkReachable(*target_segment_desc)) {
+        std::string fallback;
+        for (const char* candidate : {"rdma", "tcp"}) {
+            if (std::find(protos.begin(), protos.end(), candidate) !=
+                protos.end()) {
+                fallback = candidate;
+                break;
+            }
+        }
+        if (fallback.empty()) {
+            return Status::NotSupportedTransport(
+                "nvlink target segment " + target_segment_desc->name +
+                " is unreachable over nvlink (target rack \"" +
+                target_segment_desc->rack_id + "\", local rack \"" +
+                globalConfig().rack_id +
+                "\") and the segment offers no cross-rack transport "
+                "(rdma/tcp)");
+        }
+        preferred_proto = fallback;
+    }
     if ((preferred_proto == "hip" || preferred_proto == "musa" ||
          preferred_proto == "shm") &&
         !isLocalIpcReachableTarget(target_segment_desc->name,

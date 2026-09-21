@@ -88,6 +88,10 @@ class MooncakeStoreService:
     - protocol: Communication protocol (tcp or rdma).
     - device_name: The name of the device to use.
     - master_server_address: The address of the master server.
+    - rack_id: Rack identifier of this machine for rack-affinity scheduling
+      (empty = rack affinity disabled).
+    - strict_rack: When true, writes are restricted to same-rack segments and
+      retry instead of falling back to another rack.
     """
 
     def __init__(self, config_path: str = None, cli_config: dict = None):
@@ -183,6 +187,10 @@ class MooncakeStoreService:
                             self.config.enable_client_http_server
                         ),
                         "client_http_port": self.config.client_http_port,
+                        "rack_id": self.config.rack_id,
+                        "strict_rack": (
+                            "true" if self.config.strict_rack else "false"
+                        ),
                     }
                 )
 

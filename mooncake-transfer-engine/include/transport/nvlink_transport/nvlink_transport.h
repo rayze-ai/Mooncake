@@ -106,6 +106,14 @@ class NvlinkTransport : public Transport {
 
     static void* allocatePinnedLocalMemory(size_t length);
 
+    // Same as above, but guarantees the returned address is a multiple of
+    // `alignment` (rounded up to the CUDA allocation granularity). Callers that
+    // hand the buffer to an allocator with its own alignment contract -- e.g.
+    // cachelib, which requires Slab::kSize alignment -- must use this overload:
+    // the single-argument form only aligns to the CUDA granularity, which is
+    // typically 2MB and therefore weaker.
+    static void* allocatePinnedLocalMemory(size_t length, size_t alignment);
+
     static void freePinnedLocalMemory(void* addr);
 
    protected:
@@ -132,6 +140,13 @@ class NvlinkTransport : public Transport {
                                     uint64_t target_id);
 
     const char* getName() const override { return policy_->protocol(); }
+
+    // True when this node exports CU_MEM_HANDLE_TYPE_FABRIC handles rather
+    // than cudaIpcMemHandle_t. Only the fabric form can be imported by another
+    // host, and only inside one NVLink domain; the IPC form is same-host only.
+    // MultiTransport reads this to pick the right reachability gate: rack
+    // comparison for fabric, same-host for IPC.
+    bool usesFabricMem() const { return use_fabric_mem_; }
 
    private:
     std::atomic_bool running_;

@@ -1182,9 +1182,32 @@ int NvlinkTransport::unregisterLocalMemoryBatch(
 }
 
 void *NvlinkTransport::allocatePinnedLocalMemory(size_t size) {
+    return allocatePinnedLocalMemory(size, 0);
+}
+
+void *NvlinkTransport::allocatePinnedLocalMemory(size_t size,
+                                                 size_t alignment) {
     if (!supportFabricMem()) {
+        // No fabric support: fall back to cudaMalloc, which cannot honor an
+        // arbitrary alignment request. Callers that require one must validate
+        // the returned pointer; see allocate_vram_memory() in mooncake-store.
         void *ptr = nullptr;
         cudaMalloc(&ptr, size);
+        if (ptr != nullptr && alignment > 0 &&
+            (reinterpret_cast<uintptr_t>(ptr) % alignment) != 0) {
+            // Returning this pointer would not produce a working segment: the
+            // store hands it to cachelib via MountSegment, which rejects a
+            // base that is not Slab::kSize-aligned. Failing here names the
+            // real cause (no fabric support on this device) instead of
+            // surfacing an INVALID_PARAMS at mount time.
+            LOG(ERROR) << "NvlinkTransport: fabric memory is unavailable on "
+                          "this device and cudaMalloc returned "
+                       << ptr << ", which does not meet the requested "
+                       << alignment << "-byte alignment. Failing the "
+                          "allocation.";
+            cudaFree(ptr);
+            return nullptr;
+        }
         return ptr;
     }
     size_t granularity = 0;
@@ -1225,15 +1248,33 @@ void *NvlinkTransport::allocatePinnedLocalMemory(size_t size) {
                    << result;
         return nullptr;
     }
+    // The caller may need a stricter alignment than the driver's minimum
+    // granularity (cachelib, for example, requires Slab::kSize-aligned
+    // arenas). Honor whichever is larger. Both values are powers of two in
+    // practice, so the larger one is a multiple of the smaller and the size
+    // rounding below still satisfies cuMemCreate's granularity requirement.
+    size_t effective_alignment = granularity;
+    if (alignment > granularity) {
+        const bool both_pow2 = (granularity & (granularity - 1)) == 0 &&
+                               (alignment & (alignment - 1)) == 0;
+        if (both_pow2) {
+            effective_alignment = alignment;
+        } else {
+            LOG(WARNING) << "NvlinkTransport: cannot honor alignment "
+                         << alignment << " over granularity " << granularity
+                         << " (not both powers of two), using granularity";
+        }
+    }
     // fix size
-    size = (size + granularity - 1) & ~(granularity - 1);
-    if (size == 0) size = granularity;
+    size = (size + effective_alignment - 1) & ~(effective_alignment - 1);
+    if (size == 0) size = effective_alignment;
     result = cuMemCreate(&handle, size, &prop, 0);
     if (result != CUDA_SUCCESS) {
         LOG(ERROR) << "NvlinkTransport: cuMemCreate failed: " << result;
         return nullptr;
     }
-    result = cuMemAddressReserve((CUdeviceptr *)&ptr, size, granularity, 0, 0);
+    result = cuMemAddressReserve((CUdeviceptr *)&ptr, size, effective_alignment,
+                                 0, 0);
     if (result != CUDA_SUCCESS) {
         LOG(ERROR) << "NvlinkTransport: cuMemAddressReserve failed: " << result;
         cuMemRelease(handle);

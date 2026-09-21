@@ -673,6 +673,28 @@ class Client {
                                                       : local_hostname_;
     }
 
+    /**
+     * @brief Configure rack affinity for this client.
+     * @param rack_id Rack (NVLink domain) identifier; empty disables it.
+     * @param strict_rack When true, Put requests default to strict rack
+     *        placement: the master allocates only on same-rack segments.
+     * Must be called before mounting segments so the mounted segment carries
+     * the rack identity.
+     */
+    void SetRackAffinity(std::string rack_id, bool strict_rack) {
+        rack_id_ = std::move(rack_id);
+        strict_rack_ = strict_rack;
+        if (!rack_id_.empty()) {
+            LOG(INFO) << "client_id=" << client_id_
+                      << ", rack_id=" << rack_id_
+                      << ", strict_rack=" << strict_rack_;
+        }
+    }
+
+    [[nodiscard]] const std::string& GetRackId() const noexcept {
+        return rack_id_;
+    }
+
     // Return sorted NUMA node IDs that have at least one RDMA NIC.
     [[nodiscard]] std::vector<int> GetNicNumaNodes() const;
 
@@ -922,7 +944,10 @@ class Client {
         const std::vector<std::string>& object_keys,
         const std::vector<QueryResult>& query_results,
         std::unordered_map<std::string, std::vector<Slice>>& slices);
-    ReplicateConfig AttachHostId(const ReplicateConfig& config) const;
+    // Fill request-level locality hints (host_id, rack affinity) from the
+    // client-level configuration. Request fields that are already set win
+    // over the client defaults.
+    ReplicateConfig AttachLocalityHints(const ReplicateConfig& config) const;
 
     // Client identification
     const UUID client_id_;
@@ -968,6 +993,12 @@ class Client {
     const std::string metadata_connstring_;
     const std::string protocol_;
     const bool object_checksum_enabled_;
+
+    // Rack affinity (NVLink-domain aware placement). Configure via
+    // SetRackAffinity() before mounting segments so mounted segments carry
+    // the rack identity; empty rack_id_ disables the feature entirely.
+    std::string rack_id_;
+    bool strict_rack_{false};
 
     // Client persistent thread pool for async operations
     // Pinned host memory pool for GPU D2H staging (must outlive

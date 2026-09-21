@@ -90,6 +90,11 @@ class MultiTransport {
 
     void *getBaseAddr();
 
+    // True when an nvlink transport is installed and exporting fabric
+    // handles. Exposed so the engine can validate the rack configuration at
+    // startup, where a missing rack id is still actionable.
+    bool nvlinkUsesFabricMem() const { return nvlinkUsesFabric(); }
+
    private:
     Status freeBatchID(BatchID batch_id,
                        const std::function<void()> &before_delete);
@@ -99,6 +104,12 @@ class MultiTransport {
                           std::vector<size_t> *task_sizes);
 
     Status selectTransport(const TransferRequest &entry, Transport *&transport);
+
+    // Reachability gate for the nvlink transport. See multi_transport.cpp for
+    // why the two modes need different questions asked.
+    bool nvlinkUsesFabric() const;
+    bool nvlinkReachable(
+        const TransferMetadata::SegmentDesc &target_segment_desc) const;
 
 #ifdef ENABLE_MULTI_PROTOCOL
     Status mp_selectTransport(const TransferRequest &entry,

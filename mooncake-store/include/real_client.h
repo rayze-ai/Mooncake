@@ -612,7 +612,8 @@ class RealClient : public PyClient {
         const std::string &ssd_offload_path = "",
         const std::string &tenant_id = "default",
         bool enable_client_http_server = false,
-        int client_http_port = DEFAULT_CLIENT_HTTP_PORT);
+        int client_http_port = DEFAULT_CLIENT_HTTP_PORT,
+        const std::string &rack_id = "", bool strict_rack = false);
 
     // Overload that accepts a configuration dictionary
     tl::expected<void, ErrorCode> setup_internal(const ConfigDict &config);

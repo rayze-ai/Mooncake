@@ -819,7 +819,8 @@ class SsdPlacementTestState {
 
     ScopedAllocatorAccess GetPlacement() {
         return ScopedAllocatorAccess(allocators, segments_by_host,
-                                     client_by_name, mutex);
+                                     client_by_name, segment_rack_by_name,
+                                     mutex);
     }
 
     AllocatorManager allocators;
@@ -828,6 +829,7 @@ class SsdPlacementTestState {
    private:
     HostSegmentIndex segments_by_host;
     std::unordered_map<std::string, UUID> client_by_name;
+    RackSegmentIndex segment_rack_by_name;
     std::shared_mutex mutex;
 };
 

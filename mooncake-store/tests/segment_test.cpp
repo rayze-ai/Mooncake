@@ -844,6 +844,145 @@ TEST_F(SegmentTest, HostOrderedSegmentsTracksMountStatusAndUnmount) {
     }
 }
 
+TEST_F(SegmentTest, RackSegmentIndexTracksMountStatusAndUnmount) {
+    SegmentManager segment_manager;
+
+    Segment rack0_segment;
+    rack0_segment.id = generate_uuid();
+    rack0_segment.name = "rack0_segment";
+    rack0_segment.size = 1024 * 1024 * 16;
+    rack0_segment.base = 0x100000000;
+    rack0_segment.host_id = "host0";
+    rack0_segment.rack_id = "rack0";
+
+    Segment rack1_segment;
+    rack1_segment.id = generate_uuid();
+    rack1_segment.name = "rack1_segment";
+    rack1_segment.size = 1024 * 1024 * 16;
+    rack1_segment.base = 0x200000000;
+    rack1_segment.host_id = "host1";
+    rack1_segment.rack_id = "rack1";
+
+    // A segment mounted without a rack id must stay invisible to rack lookups.
+    Segment no_rack_segment;
+    no_rack_segment.id = generate_uuid();
+    no_rack_segment.name = "no_rack_segment";
+    no_rack_segment.size = 1024 * 1024 * 16;
+    no_rack_segment.base = 0x300000000;
+    no_rack_segment.host_id = "host2";
+
+    const UUID client_id = generate_uuid();
+
+    {
+        auto segment_access = segment_manager.getSegmentAccess();
+        ASSERT_EQ(segment_access.MountSegment(rack0_segment, client_id,
+                                              client_liveness_),
+                  ErrorCode::OK);
+        ASSERT_EQ(segment_access.MountSegment(rack1_segment, client_id,
+                                              client_liveness_),
+                  ErrorCode::OK);
+        ASSERT_EQ(segment_access.MountSegment(no_rack_segment, client_id,
+                                              client_liveness_),
+                  ErrorCode::OK);
+    }
+
+    {
+        auto allocator_access = segment_manager.getAllocatorAccess();
+        auto rack0 = allocator_access.GetRackSegmentNames("rack0");
+        ASSERT_EQ(rack0.size(), 1u);
+        EXPECT_EQ(*rack0.begin(), rack0_segment.name);
+
+        auto rack1_id = allocator_access.GetSegmentRackId(rack1_segment.name);
+        ASSERT_TRUE(rack1_id.has_value());
+        EXPECT_EQ(*rack1_id, "rack1");
+        EXPECT_FALSE(allocator_access.GetSegmentRackId(no_rack_segment.name)
+                         .has_value());
+        // An empty rack id never matches, so rack affinity stays off.
+        EXPECT_TRUE(allocator_access.GetRackSegmentNames("").empty());
+        EXPECT_TRUE(allocator_access.GetRackSegmentNames("rack9").empty());
+    }
+
+    // A draining segment is no longer allocatable and must leave the index.
+    {
+        auto segment_access = segment_manager.getSegmentAccess();
+        ASSERT_EQ(segment_access.SetSegmentStatusByName(
+                      rack0_segment.name, SegmentStatus::DRAINING),
+                  ErrorCode::OK);
+    }
+    {
+        auto allocator_access = segment_manager.getAllocatorAccess();
+        EXPECT_TRUE(allocator_access.GetRackSegmentNames("rack0").empty());
+    }
+
+    // Returning to OK re-registers it.
+    {
+        auto segment_access = segment_manager.getSegmentAccess();
+        ASSERT_EQ(segment_access.SetSegmentStatusByName(rack0_segment.name,
+                                                        SegmentStatus::OK),
+                  ErrorCode::OK);
+    }
+    {
+        auto allocator_access = segment_manager.getAllocatorAccess();
+        EXPECT_EQ(allocator_access.GetRackSegmentNames("rack0").size(), 1u);
+    }
+
+    // Unmount drops it for good.
+    {
+        auto segment_access = segment_manager.getSegmentAccess();
+        size_t metrics_dec_capacity = 0;
+        ASSERT_EQ(segment_access.PrepareUnmountSegment(rack0_segment.id,
+                                                       metrics_dec_capacity),
+                  ErrorCode::OK);
+        ASSERT_EQ(segment_access.CommitUnmountSegment(
+                      rack0_segment.id, client_id, metrics_dec_capacity),
+                  ErrorCode::OK);
+    }
+    {
+        auto allocator_access = segment_manager.getAllocatorAccess();
+        EXPECT_TRUE(allocator_access.GetRackSegmentNames("rack0").empty());
+        EXPECT_FALSE(
+            allocator_access.GetSegmentRackId(rack0_segment.name).has_value());
+        // Other racks are untouched.
+        EXPECT_EQ(allocator_access.GetRackSegmentNames("rack1").size(), 1u);
+    }
+}
+
+TEST_F(SegmentTest, RackSegmentIndexGroupsMultipleSegmentsPerRack) {
+    SegmentManager segment_manager;
+    const UUID client_id = generate_uuid();
+    std::vector<Segment> segments;
+
+    // Two hosts in rack0, one in rack1 — the shape of a rack-aware cluster.
+    for (int i = 0; i < 3; ++i) {
+        Segment segment;
+        segment.id = generate_uuid();
+        segment.name = "segment_" + std::to_string(i);
+        segment.size = 1024 * 1024 * 16;
+        segment.base = 0x100000000 + static_cast<uint64_t>(i) * 0x100000000;
+        segment.host_id = "host" + std::to_string(i);
+        segment.rack_id = (i < 2) ? "rack0" : "rack1";
+        segments.push_back(segment);
+    }
+
+    {
+        auto segment_access = segment_manager.getSegmentAccess();
+        for (const auto& segment : segments) {
+            ASSERT_EQ(
+                segment_access.MountSegment(segment, client_id,
+                                            client_liveness_),
+                ErrorCode::OK);
+        }
+    }
+
+    auto allocator_access = segment_manager.getAllocatorAccess();
+    auto rack0 = allocator_access.GetRackSegmentNames("rack0");
+    EXPECT_EQ(rack0.size(), 2u);
+    EXPECT_EQ(rack0.count(segments[0].name), 1u);
+    EXPECT_EQ(rack0.count(segments[1].name), 1u);
+    EXPECT_EQ(rack0.count(segments[2].name), 0u);
+    EXPECT_EQ(allocator_access.GetRackSegmentNames("rack1").size(), 1u);
+}
+
 TEST_F(SegmentTest, DetachedAllocationDoesNotBlockLivenessTransition) {
     SegmentManager segment_manager(BufferAllocatorType::OFFSET);
     Segment segment;
@@ -1030,6 +1169,88 @@ TEST_F(SegmentTest, SharedNameRegistrationsSurviveSegmentSnapshotRestore) {
     }
     EXPECT_EQ(owners.at(first.id), first_owner);
     EXPECT_EQ(owners.at(second.id), second_owner);
+}
+
+// A master that restores a snapshot must come back with rack identity intact,
+// in BOTH places that hold it. Under strict_rack a missing rack index is not a
+// degradation but a total write outage: every serving segment looks
+// rack-external, so every memory allocation fails and does not self-heal until
+// all segments remount. The allocator copy matters just as much: readers get
+// the rack off the buffer descriptor, which reads it from the allocator, so a
+// restored allocator without a rack makes every replica it serves look
+// rack-external and silently disables same-rack (NVLink) selection.
+TEST_F(SegmentTest, RackIdSurvivesSegmentSnapshotRestore) {
+    SegmentManager source(BufferAllocatorType::OFFSET);
+    Segment rack0;
+    rack0.id = generate_uuid();
+    rack0.name = "snapshot-rack0-segment";
+    rack0.base = DEFAULT_CXL_BASE;
+    rack0.size = 64 * 1024 * 1024;
+    rack0.te_endpoint = "snapshot-rack0-endpoint";
+    rack0.rack_id = "rack0";
+
+    Segment norack;
+    norack.id = generate_uuid();
+    norack.name = "snapshot-norack-segment";
+    norack.base = rack0.base + rack0.size;
+    norack.size = 64 * 1024 * 1024;
+    norack.te_endpoint = "snapshot-norack-endpoint";
+
+    const UUID rack0_owner = generate_uuid();
+    const UUID norack_owner = generate_uuid();
+    {
+        auto segment_access = source.getSegmentAccess();
+        ASSERT_EQ(
+            segment_access.MountSegment(rack0, rack0_owner, client_liveness_),
+            ErrorCode::OK);
+        ASSERT_EQ(segment_access.MountSegment(
+                      norack, norack_owner,
+                      std::make_shared<ClientLivenessRecord>(
+                          ClientLivenessRecord::Clock::now())),
+                  ErrorCode::OK);
+    }
+
+    auto serialized =
+        SegmentSerializer(&source).Serialize(LocalSsdPersistedState{});
+    ASSERT_TRUE(serialized.has_value());
+
+    SegmentManager restored(BufferAllocatorType::OFFSET);
+    auto restored_state = SegmentSerializer(&restored).Deserialize(*serialized);
+    ASSERT_TRUE(restored_state.has_value());
+
+    // 1. The segment record itself round-trips the rack.
+    std::vector<std::pair<Segment, UUID>> segments;
+    ASSERT_EQ(restored.getSegmentAccess().GetAllSegments(segments),
+              ErrorCode::OK);
+    std::unordered_map<std::string, std::string> rack_by_name;
+    for (const auto& [segment, owner] : segments) {
+        rack_by_name[segment.name] = segment.RackId();
+    }
+    EXPECT_EQ(rack_by_name.at(rack0.name), "rack0");
+    EXPECT_TRUE(rack_by_name.at(norack.name).empty());
+
+    // 2. The master-side rack index is rebuilt, so strict-mode placement can
+    //    still find a candidate.
+    {
+        auto allocator_access = restored.getAllocatorAccess();
+        const auto rack0_names = allocator_access.GetRackSegmentNames("rack0");
+        EXPECT_EQ(rack0_names.count(rack0.name), 1u);
+        EXPECT_EQ(rack0_names.count(norack.name), 0u);
+        EXPECT_TRUE(allocator_access.GetRackSegmentNames("rack1").empty());
+    }
+
+    // 3. The restored allocator carries the rack, so descriptors it produces
+    //    are not seen as rack-external by readers.
+    {
+        auto segment_access = restored.getSegmentAccess();
+        auto rack0_allocator = segment_access.GetAllocator(rack0.id);
+        ASSERT_NE(rack0_allocator, nullptr);
+        EXPECT_EQ(rack0_allocator->GetRackId(), "rack0");
+
+        auto norack_allocator = segment_access.GetAllocator(norack.id);
+        ASSERT_NE(norack_allocator, nullptr);
+        EXPECT_TRUE(norack_allocator->GetRackId().empty());
+    }
 }
 
 TEST_F(SegmentTest, HostOrderedSegmentsRotateWithinSameHostByKey) {

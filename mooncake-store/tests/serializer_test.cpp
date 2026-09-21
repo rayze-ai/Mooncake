@@ -217,6 +217,83 @@ TEST_F(SerializerTest, MountedSegmentDeserializesLegacyFormatWithoutHostId) {
     EXPECT_EQ(restored->status, SegmentStatus::OK);
 }
 
+// A segment that loses its rack_id across a snapshot round-trip is invisible to
+// the master's rack index. Under strict_rack that is not a degradation but a
+// total write outage: every segment looks rack-external, so every memory
+// allocation fails. Pin the field down.
+TEST_F(SerializerTest, MountedSegmentSerializationPreservesRackId) {
+    MountedSegment original;
+    original.segment.id = generate_uuid();
+    original.segment.name = "segment_rack0";
+    original.segment.base = 0x300000000;
+    original.segment.size = 1024 * 1024;
+    original.segment.te_endpoint = "segment_rack0";
+    original.segment.host_id = "host1";
+    original.segment.rack_id = "rack0";
+    original.status = SegmentStatus::OK;
+
+    msgpack::sbuffer buffer;
+    MsgpackPacker packer(&buffer);
+    ASSERT_TRUE(
+        Serializer<MountedSegment>::serialize(original, packer).has_value());
+
+    auto object_handle = msgpack::unpack(buffer.data(), buffer.size());
+    auto restored =
+        Serializer<MountedSegment>::deserialize(object_handle.get());
+    ASSERT_TRUE(restored.has_value());
+    EXPECT_EQ(restored->segment.host_id, original.segment.host_id);
+    EXPECT_EQ(restored->segment.RackId(), "rack0");
+}
+
+// Segments mounted without rack affinity must round-trip as rackless rather
+// than picking up a stray value.
+TEST_F(SerializerTest, MountedSegmentSerializationPreservesAbsentRackId) {
+    MountedSegment original;
+    original.segment.id = generate_uuid();
+    original.segment.name = "segment_norack";
+    original.segment.base = 0x300000000;
+    original.segment.size = 1024 * 1024;
+    original.segment.te_endpoint = "segment_norack";
+    original.status = SegmentStatus::OK;
+
+    msgpack::sbuffer buffer;
+    MsgpackPacker packer(&buffer);
+    ASSERT_TRUE(
+        Serializer<MountedSegment>::serialize(original, packer).has_value());
+
+    auto object_handle = msgpack::unpack(buffer.data(), buffer.size());
+    auto restored =
+        Serializer<MountedSegment>::deserialize(object_handle.get());
+    ASSERT_TRUE(restored.has_value());
+    EXPECT_TRUE(restored->segment.RackId().empty());
+}
+
+// A snapshot written before rack affinity stops at host_id (9 fields). It must
+// still load, with the segment reported as rackless.
+TEST_F(SerializerTest, MountedSegmentDeserializesPreRackFormat) {
+    const UUID segment_id = generate_uuid();
+
+    msgpack::sbuffer buffer;
+    MsgpackPacker packer(&buffer);
+    packer.pack_array(9);
+    packer.pack(UuidToString(segment_id));
+    packer.pack(std::string("pre_rack_segment"));
+    packer.pack(static_cast<uint64_t>(0x300000000));
+    packer.pack(static_cast<uint64_t>(1024 * 1024));
+    packer.pack(std::string("pre_rack_segment"));
+    packer.pack(static_cast<int16_t>(SegmentStatus::OK));
+    packer.pack(false);
+    packer.pack_nil();
+    packer.pack(std::string("host1"));
+
+    auto object_handle = msgpack::unpack(buffer.data(), buffer.size());
+    auto restored =
+        Serializer<MountedSegment>::deserialize(object_handle.get());
+    ASSERT_TRUE(restored.has_value());
+    EXPECT_EQ(restored->segment.host_id, "host1");
+    EXPECT_TRUE(restored->segment.RackId().empty());
+}
+
 }  // namespace mooncake::test
 
 int main(int argc, char** argv) {

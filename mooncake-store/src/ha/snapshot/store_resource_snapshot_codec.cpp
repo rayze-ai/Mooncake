@@ -30,8 +30,9 @@ tl::expected<void, SerializationError> EncodeMountedRegion(
     const MountedRegion& mounted,
     const OffsetBufferAllocatorSnapshot& allocator, MsgpackPacker& packer) {
     // Preserved wire shape: [segment_id, segment_name, segment_base,
-    // segment_size, te_endpoint, status, has_allocator, allocator, host_id].
-    packer.pack_array(9);
+    // segment_size, te_endpoint, status, has_allocator, allocator, host_id,
+    // rack_id].
+    packer.pack_array(10);
     packer.pack(UuidToString(mounted.segment.id));
     packer.pack(mounted.segment.name);
     packer.pack(static_cast<uint64_t>(mounted.segment.base));
@@ -44,6 +45,7 @@ tl::expected<void, SerializationError> EncodeMountedRegion(
         return tl::make_unexpected(encoded.error());
     }
     packer.pack(mounted.segment.host_id);
+    packer.pack(mounted.segment.RackId());
     return {};
 }
 
@@ -90,6 +92,12 @@ tl::expected<DecodedMountedRegion, SerializationError> DecodeMountedRegion(
         }
         if (object.via.array.size >= 9) {
             decoded.mounted.segment.host_id = array[8].as<std::string>();
+        }
+        // Absent in snapshots written before rack affinity; an empty rack_id
+        // keeps the segment out of the rack index instead of having it claim
+        // an arbitrary rack.
+        if (object.via.array.size >= 10) {
+            decoded.mounted.segment.rack_id = array[9].as<std::string>();
         }
         return decoded;
     } catch (const std::exception& error) {

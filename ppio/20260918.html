@@ -1,0 +1,851 @@
+<title>NVL72 机架感知部署</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --ground: #f2f4f6;
+    --surface: #ffffff;
+    --surface-sunk: #e7ebef;
+    --ink: #161b22;
+    --ink-soft: #4a5561;
+    --ink-faint: #76838f;
+    --rule: #cfd8e0;
+    --nvlink: #0f7d84;
+    --nvlink-wash: #d9edee;
+    --rdma: #6b7a89;
+    --rdma-wash: #dfe5ea;
+    --alarm: #a8341f;
+    --alarm-wash: #f6e2dd;
+    --ok: #3d6b34;
+    --ok-wash: #e2ecdd;
+    --sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    --cond: "IBM Plex Sans Condensed", "IBM Plex Sans", ui-sans-serif, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #10141a;
+      --surface: #191f27;
+      --surface-sunk: #0b0e13;
+      --ink: #e6ebf0;
+      --ink-soft: #a9b6c2;
+      --ink-faint: #7d8b98;
+      --rule: #2d3742;
+      --nvlink: #4dd4dc;
+      --nvlink-wash: #103336;
+      --rdma: #8c9bab;
+      --rdma-wash: #222a33;
+      --alarm: #f08163;
+      --alarm-wash: #371a13;
+      --ok: #8fc47f;
+      --ok-wash: #1b2a17;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #10141a;
+    --surface: #191f27;
+    --surface-sunk: #0b0e13;
+    --ink: #e6ebf0;
+    --ink-soft: #a9b6c2;
+    --ink-faint: #7d8b98;
+    --rule: #2d3742;
+    --nvlink: #4dd4dc;
+    --nvlink-wash: #103336;
+    --rdma: #8c9bab;
+    --rdma-wash: #222a33;
+    --alarm: #f08163;
+    --alarm-wash: #371a13;
+    --ok: #8fc47f;
+    --ok-wash: #1b2a17;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 56px 28px 96px;
+    display: flex;
+    flex-direction: column;
+    gap: 56px;
+  }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 10px;
+  }
+  h1 {
+    font-family: var(--cond);
+    font-weight: 700;
+    font-size: clamp(2.1rem, 5vw, 3.1rem);
+    line-height: 1.08;
+    letter-spacing: -0.015em;
+    margin: 0 0 14px;
+    text-wrap: balance;
+  }
+  .lede {
+    font-size: 1.1rem;
+    color: var(--ink-soft);
+    max-width: 62ch;
+    margin: 0;
+  }
+  h2 {
+    font-family: var(--cond);
+    font-weight: 600;
+    font-size: 1.65rem;
+    letter-spacing: -0.01em;
+    margin: 0 0 6px;
+    text-wrap: balance;
+  }
+  h3 {
+    font-family: var(--cond);
+    font-weight: 600;
+    font-size: 1.12rem;
+    margin: 0 0 8px;
+  }
+  p { margin: 0 0 14px; max-width: 68ch; }
+  p:last-child { margin-bottom: 0; }
+  section { display: flex; flex-direction: column; gap: 22px; }
+  .section-head { display: flex; flex-direction: column; gap: 4px; }
+  .section-head p { color: var(--ink-soft); margin: 0; }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.875em;
+    background: var(--surface-sunk);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 0.1em 0.36em;
+  }
+
+  figure {
+    margin: 0;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    padding: 26px 24px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    overflow-x: auto;
+  }
+  figure svg { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+  figcaption {
+    font-size: 0.875rem;
+    color: var(--ink-soft);
+    border-top: 1px solid var(--rule);
+    padding-top: 12px;
+    max-width: 78ch;
+  }
+  figcaption b { color: var(--ink); font-weight: 600; }
+
+  .stat-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+  }
+  .stat { background: var(--surface); padding: 18px 20px; }
+  .stat .k {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    display: block;
+    margin-bottom: 7px;
+  }
+  .stat .v {
+    font-family: var(--cond);
+    font-weight: 700;
+    font-size: 1.85rem;
+    line-height: 1;
+    letter-spacing: -0.01em;
+    font-variant-numeric: tabular-nums;
+    display: block;
+  }
+  .stat .u { font-size: 0.8rem; color: var(--ink-faint); display: block; margin-top: 6px; }
+  .stat.hi .v { color: var(--nvlink); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.925rem; }
+  th, td {
+    text-align: left;
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+  }
+  th {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 500;
+    background: var(--surface-sunk);
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  .tbl-wrap { border: 1px solid var(--rule); background: var(--surface); overflow-x: auto; }
+
+  .pill {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 2px;
+    white-space: nowrap;
+  }
+  .pill.done { background: var(--ok-wash); color: var(--ok); }
+  .pill.block { background: var(--alarm-wash); color: var(--alarm); }
+  .pill.todo { background: var(--rdma-wash); color: var(--ink-soft); }
+
+  pre {
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    line-height: 1.6;
+    background: var(--surface-sunk);
+    border: 1px solid var(--rule);
+    padding: 16px 18px;
+    margin: 0;
+    overflow-x: auto;
+  }
+  pre .cm { color: var(--ink-faint); }
+  pre .st { color: var(--nvlink); }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+  }
+  .card.warn { border-left: 3px solid var(--alarm); }
+  .card .role {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .card p { font-size: 0.9rem; color: var(--ink-soft); margin: 0; }
+
+  .blockers { display: flex; flex-direction: column; gap: 14px; counter-reset: b; }
+  .blocker {
+    display: grid;
+    grid-template-columns: 34px 1fr;
+    gap: 16px;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    padding: 18px 20px;
+  }
+  .blocker::before {
+    counter-increment: b;
+    content: counter(b);
+    font-family: var(--cond);
+    font-weight: 700;
+    font-size: 1.3rem;
+    color: var(--alarm);
+    line-height: 1.3;
+  }
+  .blocker h3 { margin: 0 0 5px; }
+  .blocker p { font-size: 0.9rem; color: var(--ink-soft); margin: 0; }
+
+  footer {
+    border-top: 1px solid var(--rule);
+    padding-top: 22px;
+    font-size: 0.875rem;
+    color: var(--ink-faint);
+  }
+  footer p { max-width: 74ch; }
+  :focus-visible { outline: 2px solid var(--nvlink); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">Mooncake Store · 部署方案 · 2026-09-18</p>
+  <h1>4 × GB300 NVL72 的机架感知部署</h1>
+  <p class="lede">Prefill 写入锁定同机架走 NVLink，Decode 读取优先同机架、允许跨机架回落 RDMA。放置层已经实现；传输层还差一步，本页说明差在哪里。</p>
+</header>
+
+<div class="stat-row">
+  <div class="stat hi">
+    <span class="k">机架内 NVLink</span>
+    <span class="v">1.8</span>
+    <span class="u">TB/s per GPU · 整机架 130 TB/s</span>
+  </div>
+  <div class="stat">
+    <span class="k">跨机架 RDMA</span>
+    <span class="v">100</span>
+    <span class="u">GB/s per port · ConnectX-8 800 Gb/s</span>
+  </div>
+  <div class="stat hi">
+    <span class="k">带宽落差</span>
+    <span class="v">≈18×</span>
+    <span class="u">方案全部收益的来源</span>
+  </div>
+  <div class="stat">
+    <span class="k">集群规模</span>
+    <span class="v">72</span>
+    <span class="u">节点 · 4 机架 × 18 tray · 288 GPU</span>
+  </div>
+</div>
+
+<section>
+  <div class="section-head">
+    <h2>1 · 拓扑：一个 NVL72 机架就是一个 NVLink 域</h2>
+    <p>rack_id 不是机柜位置，而是 NVLink 域（IMEX domain）的标识。同机架 18 台节点必须用同一个 rack_id。</p>
+  </div>
+
+  <figure>
+    <svg viewBox="0 0 1000 430" role="img" aria-label="四个 NVL72 机架，每个机架内 18 台节点由 NVLink 连成一个域，机架之间只有带宽低得多的 RDMA spine 连接">
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <polygon points="0,1 9,5 0,9" fill="currentColor"/>
+        </marker>
+      </defs>
+
+      <!-- spine switch -->
+      <rect x="360" y="16" width="280" height="38"   stroke-width="1.5"/ style="fill:var(--rdma-wash);stroke:var(--rdma)">
+      <text x="500" y="34" text-anchor="middle"  font-size="13" font-weight="600" style="fill:var(--ink);font-family:var(--cond)">跨机架 RDMA Spine</text>
+      <text x="500" y="48" text-anchor="middle"  font-size="10" style="fill:var(--ink-soft);font-family:var(--mono)">IB / RoCE · 800 Gb/s per port</text>
+
+      <!-- rack0 uplink -->
+      <line x1="135" y1="112" x2="135" y2="60"  stroke-width="1.5" stroke-dasharray="5 3"/ style="stroke:var(--rdma)">
+      <line x1="135" y1="60" x2="500" y2="60"  stroke-width="1.5" stroke-dasharray="5 3"/ style="stroke:var(--rdma)">
+      <line x1="500" y1="60" x2="500" y2="56"  stroke-width="1.5"/ style="stroke:var(--rdma)">
+
+      <!-- rack0 chassis -->
+      <rect x="40" y="112" width="190" height="278"   stroke-width="1.5"/ style="fill:var(--surface-sunk);stroke:var(--rule)">
+      <text x="54" y="132"  font-size="14" font-weight="700" style="fill:var(--ink);font-family:var(--cond)">rack0</text>
+      <text x="216" y="132" text-anchor="end"  font-size="9.5" style="fill:var(--ink-faint);font-family:var(--mono)">NVL72</text>
+        <rect x="54" y="144.0" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="194" y1="148.8" x2="208" y2="148.8"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="54" y="156.6" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="194" y1="161.4" x2="208" y2="161.4"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="54" y="169.2" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="194" y1="174.0" x2="208" y2="174.0"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="54" y="181.8" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="194" y1="186.6" x2="208" y2="186.6"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="54" y="194.4" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="194" y1="199.2" x2="208" y2="199.2"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="54" y="207.0" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="194" y1="211.8" x2="208" y2="211.8"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="54" y="219.6" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="194" y1="224.4" x2="208" y2="224.4"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="54" y="232.2" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="194" y1="237.0" x2="208" y2="237.0"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="54" y="244.8" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="194" y1="249.6" x2="208" y2="249.6"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="54" y="257.4" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="194" y1="262.2" x2="208" y2="262.2"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="54" y="270.0" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="194" y1="274.8" x2="208" y2="274.8"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="54" y="282.6" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="194" y1="287.4" x2="208" y2="287.4"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="54" y="295.2" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="194" y1="300.0" x2="208" y2="300.0"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="54" y="307.8" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="194" y1="312.6" x2="208" y2="312.6"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="54" y="320.4" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="194" y1="325.2" x2="208" y2="325.2"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="54" y="333.0" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="194" y1="337.8" x2="208" y2="337.8"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="54" y="345.6" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="194" y1="350.4" x2="208" y2="350.4"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="54" y="358.2" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="194" y1="363.0" x2="208" y2="363.0"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <line x1="208" y1="147" x2="208" y2="368"  stroke-width="9" stroke-linecap="round"/ style="stroke:var(--nvlink)">
+      <text x="54" y="382"  font-size="9.5" style="fill:var(--ink-faint);font-family:var(--mono)">18 tray · 72 GPU</text>
+
+      <!-- rack1 uplink -->
+      <line x1="360" y1="112" x2="360" y2="60"  stroke-width="1.5" stroke-dasharray="5 3"/ style="stroke:var(--rdma)">
+      <line x1="360" y1="60" x2="500" y2="60"  stroke-width="1.5" stroke-dasharray="5 3"/ style="stroke:var(--rdma)">
+      <line x1="500" y1="60" x2="500" y2="56"  stroke-width="1.5"/ style="stroke:var(--rdma)">
+
+      <!-- rack1 chassis -->
+      <rect x="265" y="112" width="190" height="278"   stroke-width="1.5"/ style="fill:var(--surface-sunk);stroke:var(--rule)">
+      <text x="279" y="132"  font-size="14" font-weight="700" style="fill:var(--ink);font-family:var(--cond)">rack1</text>
+      <text x="441" y="132" text-anchor="end"  font-size="9.5" style="fill:var(--ink-faint);font-family:var(--mono)">NVL72</text>
+        <rect x="279" y="144.0" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="419" y1="148.8" x2="433" y2="148.8"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="279" y="156.6" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="419" y1="161.4" x2="433" y2="161.4"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="279" y="169.2" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="419" y1="174.0" x2="433" y2="174.0"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="279" y="181.8" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="419" y1="186.6" x2="433" y2="186.6"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="279" y="194.4" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="419" y1="199.2" x2="433" y2="199.2"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="279" y="207.0" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="419" y1="211.8" x2="433" y2="211.8"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="279" y="219.6" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="419" y1="224.4" x2="433" y2="224.4"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="279" y="232.2" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="419" y1="237.0" x2="433" y2="237.0"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="279" y="244.8" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="419" y1="249.6" x2="433" y2="249.6"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="279" y="257.4" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="419" y1="262.2" x2="433" y2="262.2"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="279" y="270.0" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="419" y1="274.8" x2="433" y2="274.8"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="279" y="282.6" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="419" y1="287.4" x2="433" y2="287.4"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="279" y="295.2" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="419" y1="300.0" x2="433" y2="300.0"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="279" y="307.8" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="419" y1="312.6" x2="433" y2="312.6"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="279" y="320.4" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="419" y1="325.2" x2="433" y2="325.2"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="279" y="333.0" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="419" y1="337.8" x2="433" y2="337.8"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="279" y="345.6" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="419" y1="350.4" x2="433" y2="350.4"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="279" y="358.2" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="419" y1="363.0" x2="433" y2="363.0"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <line x1="433" y1="147" x2="433" y2="368"  stroke-width="9" stroke-linecap="round"/ style="stroke:var(--nvlink)">
+      <text x="279" y="382"  font-size="9.5" style="fill:var(--ink-faint);font-family:var(--mono)">18 tray · 72 GPU</text>
+
+      <!-- rack2 uplink -->
+      <line x1="585" y1="112" x2="585" y2="60"  stroke-width="1.5" stroke-dasharray="5 3"/ style="stroke:var(--rdma)">
+      <line x1="585" y1="60" x2="500" y2="60"  stroke-width="1.5" stroke-dasharray="5 3"/ style="stroke:var(--rdma)">
+      <line x1="500" y1="60" x2="500" y2="56"  stroke-width="1.5"/ style="stroke:var(--rdma)">
+
+      <!-- rack2 chassis -->
+      <rect x="490" y="112" width="190" height="278"   stroke-width="1.5"/ style="fill:var(--surface-sunk);stroke:var(--rule)">
+      <text x="504" y="132"  font-size="14" font-weight="700" style="fill:var(--ink);font-family:var(--cond)">rack2</text>
+      <text x="666" y="132" text-anchor="end"  font-size="9.5" style="fill:var(--ink-faint);font-family:var(--mono)">NVL72</text>
+        <rect x="504" y="144.0" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="644" y1="148.8" x2="658" y2="148.8"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="504" y="156.6" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="644" y1="161.4" x2="658" y2="161.4"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="504" y="169.2" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="644" y1="174.0" x2="658" y2="174.0"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="504" y="181.8" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="644" y1="186.6" x2="658" y2="186.6"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="504" y="194.4" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="644" y1="199.2" x2="658" y2="199.2"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="504" y="207.0" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="644" y1="211.8" x2="658" y2="211.8"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="504" y="219.6" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="644" y1="224.4" x2="658" y2="224.4"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="504" y="232.2" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="644" y1="237.0" x2="658" y2="237.0"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="504" y="244.8" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="644" y1="249.6" x2="658" y2="249.6"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="504" y="257.4" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="644" y1="262.2" x2="658" y2="262.2"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="504" y="270.0" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="644" y1="274.8" x2="658" y2="274.8"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="504" y="282.6" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="644" y1="287.4" x2="658" y2="287.4"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="504" y="295.2" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="644" y1="300.0" x2="658" y2="300.0"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="504" y="307.8" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="644" y1="312.6" x2="658" y2="312.6"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="504" y="320.4" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="644" y1="325.2" x2="658" y2="325.2"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="504" y="333.0" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="644" y1="337.8" x2="658" y2="337.8"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="504" y="345.6" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="644" y1="350.4" x2="658" y2="350.4"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="504" y="358.2" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="644" y1="363.0" x2="658" y2="363.0"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <line x1="658" y1="147" x2="658" y2="368"  stroke-width="9" stroke-linecap="round"/ style="stroke:var(--nvlink)">
+      <text x="504" y="382"  font-size="9.5" style="fill:var(--ink-faint);font-family:var(--mono)">18 tray · 72 GPU</text>
+
+      <!-- rack3 uplink -->
+      <line x1="810" y1="112" x2="810" y2="60"  stroke-width="1.5" stroke-dasharray="5 3"/ style="stroke:var(--rdma)">
+      <line x1="810" y1="60" x2="500" y2="60"  stroke-width="1.5" stroke-dasharray="5 3"/ style="stroke:var(--rdma)">
+      <line x1="500" y1="60" x2="500" y2="56"  stroke-width="1.5"/ style="stroke:var(--rdma)">
+
+      <!-- rack3 chassis -->
+      <rect x="715" y="112" width="190" height="278"   stroke-width="1.5"/ style="fill:var(--surface-sunk);stroke:var(--rule)">
+      <text x="729" y="132"  font-size="14" font-weight="700" style="fill:var(--ink);font-family:var(--cond)">rack3</text>
+      <text x="891" y="132" text-anchor="end"  font-size="9.5" style="fill:var(--ink-faint);font-family:var(--mono)">NVL72</text>
+        <rect x="729" y="144.0" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="869" y1="148.8" x2="883" y2="148.8"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="729" y="156.6" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="869" y1="161.4" x2="883" y2="161.4"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="729" y="169.2" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="869" y1="174.0" x2="883" y2="174.0"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="729" y="181.8" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="869" y1="186.6" x2="883" y2="186.6"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="729" y="194.4" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="869" y1="199.2" x2="883" y2="199.2"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="729" y="207.0" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="869" y1="211.8" x2="883" y2="211.8"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="729" y="219.6" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="869" y1="224.4" x2="883" y2="224.4"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="729" y="232.2" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="869" y1="237.0" x2="883" y2="237.0"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="729" y="244.8" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="869" y1="249.6" x2="883" y2="249.6"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="729" y="257.4" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="869" y1="262.2" x2="883" y2="262.2"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="729" y="270.0" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="869" y1="274.8" x2="883" y2="274.8"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="729" y="282.6" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="869" y1="287.4" x2="883" y2="287.4"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="729" y="295.2" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="869" y1="300.0" x2="883" y2="300.0"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="729" y="307.8" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="869" y1="312.6" x2="883" y2="312.6"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="729" y="320.4" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="869" y1="325.2" x2="883" y2="325.2"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="729" y="333.0" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="869" y1="337.8" x2="883" y2="337.8"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="729" y="345.6" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="869" y1="350.4" x2="883" y2="350.4"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <rect x="729" y="358.2" width="140" height="9.6"   stroke-width="0.8"/ style="fill:var(--surface);stroke:var(--rule)">
+        <line x1="869" y1="363.0" x2="883" y2="363.0"  stroke-width="1"/ style="stroke:var(--nvlink)">
+        <line x1="883" y1="147" x2="883" y2="368"  stroke-width="9" stroke-linecap="round"/ style="stroke:var(--nvlink)">
+      <text x="729" y="382"  font-size="9.5" style="fill:var(--ink-faint);font-family:var(--mono)">18 tray · 72 GPU</text>
+
+      <!-- annotations -->
+      <text x="40" y="410"  font-size="11" style="fill:var(--nvlink);font-family:var(--mono)">━━ NVLink 5 · 1.8 TB/s per GPU · 机架内 all-to-all 130 TB/s</text>
+      <text x="600" y="410"  font-size="11" style="fill:var(--ink-soft);font-family:var(--mono)">- - - RDMA · ≈100 GB/s per port</text>
+    </svg>
+    <figcaption><b>机架内外相差约 18 倍。</b>粗线为 NVLink 域内互联，虚线为跨机架 RDMA（线宽仅示意量级差异，非等比）。KV cache 一旦跨机架，带宽从 TB/s 掉到 GB/s 量级——这就是写入必须锁定同机架的全部理由。</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="section-head">
+    <h2>2 · 写入是硬约束，读取是软偏好</h2>
+    <p>两边拓扑完全相同，唯一的差别是那条跨机架的边：写入侧被 master 排除，读取侧允许回落。</p>
+  </div>
+
+  <figure>
+    <svg viewBox="0 0 980 360" role="img" aria-label="左右对比：Prefill 写入时跨机架路径被 master 排除，Decode 读取时跨机架路径允许作为 RDMA 回落">
+      <defs>
+        <marker id="ar2" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <polygon points="0,1.5 9,5 0,8.5" fill="currentColor"/>
+        </marker>
+        <marker id="ar3" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <polygon points="0,1.5 9,5 0,8.5" fill="currentColor"/>
+        </marker>
+      </defs>
+
+      <text x="20" y="22"  font-size="15" font-weight="700" style="fill:var(--ink);font-family:var(--cond)">Prefill 写入 · strict</text>
+      <text x="20" y="39"  font-size="10" style="fill:var(--ink-faint);font-family:var(--mono)">master 只在同机架分配副本</text>
+
+      <rect x="20" y="52" width="420" height="132" fill="none"  stroke-width="1.5" stroke-dasharray="3 3"/ style="stroke:var(--rule)">
+      <text x="30" y="70"  font-size="10" style="fill:var(--ink-faint);font-family:var(--mono)">rack0 · NVLink 域</text>
+      <rect x="36" y="84" width="118" height="46"   stroke-width="1.5"/ style="fill:var(--surface);stroke:var(--ink-soft)">
+      <text x="95.0" y="105" text-anchor="middle"  font-size="14" font-weight="600" style="fill:var(--ink);font-family:var(--cond)">Prefill</text>
+      <text x="95.0" y="120" text-anchor="middle"  font-size="9" style="fill:var(--ink-faint);font-family:var(--mono)">rack_id=rack0</text>
+      <rect x="260" y="72" width="120" height="32"   stroke-width="1.5"/ style="fill:var(--nvlink-wash);stroke:var(--nvlink)">
+      <text x="320" y="92" text-anchor="middle"  font-size="10" style="fill:var(--ink);font-family:var(--mono)">store seg</text>
+      <rect x="260" y="118" width="120" height="32"   stroke-width="1.5"/ style="fill:var(--nvlink-wash);stroke:var(--nvlink)">
+      <text x="320" y="138" text-anchor="middle"  font-size="10" style="fill:var(--ink);font-family:var(--mono)">store seg</text>
+        <line x1="160" y1="107" x2="256" y2="88"  stroke-width="2.5" marker-end="url(#ar2)" / style="stroke:var(--nvlink);color:var(--nvlink)">
+        <line x1="160" y1="107" x2="256" y2="134"  stroke-width="2.5" marker-end="url(#ar2)" / style="stroke:var(--nvlink);color:var(--nvlink)">
+      <text x="206" y="105" text-anchor="middle"  font-size="9.5" style="fill:var(--nvlink);font-family:var(--mono)">NVLink 写</text>
+
+      <rect x="20" y="232" width="420" height="92" fill="none"  stroke-width="1.5" stroke-dasharray="3 3"/ style="stroke:var(--rule)">
+      <text x="30" y="250"  font-size="10" style="fill:var(--ink-faint);font-family:var(--mono)">rack1 · 另一个 NVLink 域</text>
+      <rect x="260" y="268" width="120" height="32"   stroke-width="1.5"/ style="fill:var(--surface-sunk);stroke:var(--rule)">
+      <text x="320" y="288" text-anchor="middle"  font-size="10" style="fill:var(--ink-soft);font-family:var(--mono)">store seg</text>
+      <polyline points="95.0,134 95.0,284 256,284" fill="none"  stroke-width="2" stroke-dasharray="4 4" opacity="0.75"/ style="stroke:var(--alarm)">
+      <line x1="84.0" y1="196" x2="106.0" y2="218"  stroke-width="2.6"/ style="stroke:var(--alarm)">
+      <line x1="106.0" y1="196" x2="84.0" y2="218"  stroke-width="2.6"/ style="stroke:var(--alarm)">
+      <text x="115.0" y="203"  font-size="10" font-weight="500" style="fill:var(--alarm);font-family:var(--mono)">master 排除</text>
+      <text x="115.0" y="217"  font-size="9" style="fill:var(--alarm);font-family:var(--mono)">NO_AVAILABLE_HANDLE</text>
+      <text x="20" y="344"  font-size="10" style="fill:var(--ink-soft);font-family:var(--mono)">strict_rack=true</text>
+
+      <line x1="490" y1="12" x2="490" y2="348"  stroke-width="1"/ style="stroke:var(--rule)">
+
+      <text x="540" y="22"  font-size="15" font-weight="700" style="fill:var(--ink);font-family:var(--cond)">Decode 读取 · 优先同机架</text>
+      <text x="540" y="39"  font-size="10" style="fill:var(--ink-faint);font-family:var(--mono)">同机架优先，跨机架可读</text>
+
+      <rect x="540" y="52" width="420" height="132" fill="none"  stroke-width="1.5" stroke-dasharray="3 3"/ style="stroke:var(--rule)">
+      <text x="550" y="70"  font-size="10" style="fill:var(--ink-faint);font-family:var(--mono)">rack0 · NVLink 域</text>
+      <rect x="556" y="84" width="118" height="46"   stroke-width="1.5"/ style="fill:var(--surface);stroke:var(--ink-soft)">
+      <text x="615.0" y="105" text-anchor="middle"  font-size="14" font-weight="600" style="fill:var(--ink);font-family:var(--cond)">Decode</text>
+      <text x="615.0" y="120" text-anchor="middle"  font-size="9" style="fill:var(--ink-faint);font-family:var(--mono)">rack_id=rack0</text>
+      <rect x="780" y="72" width="120" height="32"   stroke-width="1.5"/ style="fill:var(--nvlink-wash);stroke:var(--nvlink)">
+      <text x="840" y="92" text-anchor="middle"  font-size="10" style="fill:var(--ink);font-family:var(--mono)">store seg</text>
+      <rect x="780" y="118" width="120" height="32"   stroke-width="1.5"/ style="fill:var(--nvlink-wash);stroke:var(--nvlink)">
+      <text x="840" y="138" text-anchor="middle"  font-size="10" style="fill:var(--ink);font-family:var(--mono)">store seg</text>
+        <line x1="776" y1="88" x2="680" y2="107"  stroke-width="2.5" marker-end="url(#ar2)" / style="stroke:var(--nvlink);color:var(--nvlink)">
+        <line x1="776" y1="134" x2="680" y2="107"  stroke-width="2.5" marker-end="url(#ar2)" / style="stroke:var(--nvlink);color:var(--nvlink)">
+      <text x="726" y="105" text-anchor="middle"  font-size="9.5" style="fill:var(--nvlink);font-family:var(--mono)">NVLink 读</text>
+
+      <rect x="540" y="232" width="420" height="92" fill="none"  stroke-width="1.5" stroke-dasharray="3 3"/ style="stroke:var(--rule)">
+      <text x="550" y="250"  font-size="10" style="fill:var(--ink-faint);font-family:var(--mono)">rack1 · 另一个 NVLink 域</text>
+      <rect x="780" y="268" width="120" height="32"   stroke-width="1.5"/ style="fill:var(--rdma-wash);stroke:var(--rdma)">
+      <text x="840" y="288" text-anchor="middle"  font-size="10" style="fill:var(--ink-soft);font-family:var(--mono)">store seg</text>
+      <polyline points="776,284 615.0,284 615.0,138" fill="none"  stroke-width="2" stroke-dasharray="6 4" marker-end="url(#ar3)" / style="stroke:var(--rdma);color:var(--rdma)">
+      <text x="635.0" y="203"  font-size="10" font-weight="500" style="fill:var(--ink-soft);font-family:var(--mono)">允许回落</text>
+      <text x="635.0" y="217"  font-size="9" style="fill:var(--ink-faint);font-family:var(--mono)">跨机架 RDMA 读</text>
+      <text x="540" y="344"  font-size="10" style="fill:var(--ink-soft);font-family:var(--mono)">strict_rack=false</text>
+
+    </svg>
+    <figcaption><b>左：</b>strict 模式下非本机架 segment 全部进入 <code>excluded_segments</code>，本机架放不下就触发淘汰并返回 <code>NO_AVAILABLE_HANDLE</code>，不会溢出到别的机架。<b>右：</b><code>SelectBestReplica</code> 先挑同机架副本，没有才读跨机架——所以 Decode 不会因为副本在别的机架而失败。</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="section-head">
+    <h2>3 · 链路在传输层断开</h2>
+    <p>机架信息已经完整贯通到副本选择。但选中同机架副本之后，实际走哪条物理通路由 transfer engine 决定，而它不看机架。</p>
+  </div>
+
+  <figure>
+    <svg viewBox="0 0 1000 340" role="img" aria-label="放置层的机架信息链路已完整贯通，但传输层按 segment 协议选路且没有 NVLink 域可达性判断，跨机架不会自动回落 RDMA">
+      <defs>
+        <marker id="ar4" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+          <polygon points="0,1.5 9,5 0,8.5" fill="currentColor"/>
+        </marker>
+      </defs>
+
+      <text x="20" y="20"  font-size="10.5" letter-spacing="0.08em" style="fill:var(--ok);font-family:var(--mono)">放置层 · 已实现</text>
+      <rect x="20" y="34" width="143" height="54"   stroke-width="1.5"/ style="fill:var(--ok-wash);stroke:var(--ok)">
+      <text x="91.5" y="55" text-anchor="middle"  font-size="10" font-weight="500" style="fill:var(--ink);font-family:var(--mono)">rack_id 配置</text>
+      <text x="91.5" y="71" text-anchor="middle"  font-size="9" style="fill:var(--ink-faint);font-family:var(--mono)">json / env</text>
+        <line x1="165" y1="61" x2="180" y2="61"  stroke-width="1.5" marker-end="url(#ar4)" / style="stroke:var(--ok);color:var(--ok)">
+      <rect x="183" y="34" width="143" height="54"   stroke-width="1.5"/ style="fill:var(--ok-wash);stroke:var(--ok)">
+      <text x="254.5" y="55" text-anchor="middle"  font-size="10" font-weight="500" style="fill:var(--ink);font-family:var(--mono)">SetRackAffinity</text>
+      <text x="254.5" y="71" text-anchor="middle"  font-size="9" style="fill:var(--ink-faint);font-family:var(--mono)">client</text>
+        <line x1="328" y1="61" x2="343" y2="61"  stroke-width="1.5" marker-end="url(#ar4)" / style="stroke:var(--ok);color:var(--ok)">
+      <rect x="346" y="34" width="143" height="54"   stroke-width="1.5"/ style="fill:var(--ok-wash);stroke:var(--ok)">
+      <text x="417.5" y="55" text-anchor="middle"  font-size="10" font-weight="500" style="fill:var(--ink);font-family:var(--mono)">Segment.rack_id</text>
+      <text x="417.5" y="71" text-anchor="middle"  font-size="9" style="fill:var(--ink-faint);font-family:var(--mono)">mount 携带</text>
+        <line x1="491" y1="61" x2="506" y2="61"  stroke-width="1.5" marker-end="url(#ar4)" / style="stroke:var(--ok);color:var(--ok)">
+      <rect x="509" y="34" width="143" height="54"   stroke-width="1.5"/ style="fill:var(--ok-wash);stroke:var(--ok)">
+      <text x="580.5" y="55" text-anchor="middle"  font-size="10" font-weight="500" style="fill:var(--ink);font-family:var(--mono)">RackSegmentIndex</text>
+      <text x="580.5" y="71" text-anchor="middle"  font-size="9" style="fill:var(--ink-faint);font-family:var(--mono)">master 索引</text>
+        <line x1="654" y1="61" x2="669" y2="61"  stroke-width="1.5" marker-end="url(#ar4)" / style="stroke:var(--ok);color:var(--ok)">
+      <rect x="672" y="34" width="143" height="54"   stroke-width="1.5"/ style="fill:var(--ok-wash);stroke:var(--ok)">
+      <text x="743.5" y="55" text-anchor="middle"  font-size="10" font-weight="500" style="fill:var(--ink);font-family:var(--mono)">Descriptor.rack_id_</text>
+      <text x="743.5" y="71" text-anchor="middle"  font-size="9" style="fill:var(--ink-faint);font-family:var(--mono)">副本描述符</text>
+        <line x1="817" y1="61" x2="832" y2="61"  stroke-width="1.5" marker-end="url(#ar4)" / style="stroke:var(--ok);color:var(--ok)">
+      <rect x="835" y="34" width="143" height="54"   stroke-width="1.5"/ style="fill:var(--ok-wash);stroke:var(--ok)">
+      <text x="906.5" y="55" text-anchor="middle"  font-size="10" font-weight="500" style="fill:var(--ink);font-family:var(--mono)">SelectBestReplica</text>
+      <text x="906.5" y="71" text-anchor="middle"  font-size="9" style="fill:var(--ink-faint);font-family:var(--mono)">reader 选择</text>
+
+      <line x1="909" y1="92" x2="909" y2="128"  stroke-width="1.5" marker-end="url(#ar4)" / style="stroke:var(--ink-soft);color:var(--ink-soft)">
+      <text x="898" y="114" text-anchor="end"  font-size="9.5" style="fill:var(--ink-soft);font-family:var(--mono)">选中同机架副本，交给 transfer engine</text>
+
+      <text x="20" y="152"  font-size="10.5" letter-spacing="0.08em" style="fill:var(--alarm);font-family:var(--mono)">传输层 · 阻塞</text>
+
+      <!-- selectTransport -->
+      <rect x="700" y="164" width="280" height="56"   stroke-width="1.8"/ style="fill:var(--surface);stroke:var(--alarm)">
+      <text x="840" y="186" text-anchor="middle"  font-size="11" font-weight="500" style="fill:var(--ink);font-family:var(--mono)">MultiTransport::selectTransport</text>
+      <text x="840" y="203" text-anchor="middle"  font-size="9.5" style="fill:var(--alarm);font-family:var(--mono)">只看目标 segment 的 protocol</text>
+
+      <!-- branches -->
+      <polyline points="700,192 640,192 640,254" fill="none"  stroke-width="1.5" marker-end="url(#ar4)" / style="stroke:var(--ink-soft);color:var(--ink-soft)">
+
+      <rect x="440" y="254" width="400" height="60"   stroke-width="1.5"/ style="fill:var(--alarm-wash);stroke:var(--alarm)">
+      <text x="456" y="275"  font-size="10" font-weight="500" style="fill:var(--ink);font-family:var(--mono)">无 NVLink 域可达性门控</text>
+      <text x="456" y="291"  font-size="9" style="fill:var(--ink-soft);font-family:var(--mono)">hip / musa / shm 有 isLocalIpcReachableTarget，nvlink 没有</text>
+      <text x="456" y="305"  font-size="9" style="fill:var(--alarm);font-family:var(--mono)">跨机架选中 nvlink segment → fabric handle 导入失败，不回落 RDMA</text>
+
+      <!-- exclusive install -->
+      <rect x="20" y="164" width="300" height="56"   stroke-width="1.5"/ style="fill:var(--surface);stroke:var(--rule)">
+      <text x="36" y="185"  font-size="10" font-weight="500" style="fill:var(--ink);font-family:var(--mono)">transport 安装是互斥的</text>
+      <text x="36" y="201"  font-size="9" style="fill:var(--ink-soft);font-family:var(--mono)">if/else：MC_FORCE_MNNVL → nvlink，否则 rdma</text>
+      <text x="36" y="213"  font-size="9" style="fill:var(--ink-faint);font-family:var(--mono)">一个客户端只装一个，不会两个都装</text>
+
+      <rect x="20" y="254" width="400" height="60"   stroke-width="1.5"/ style="fill:var(--surface);stroke:var(--rule)">
+      <text x="36" y="275"  font-size="10" font-weight="500" style="fill:var(--ink);font-family:var(--mono)">多协议 segment 当前也解决不了</text>
+      <text x="36" y="291"  font-size="9" style="fill:var(--ink-soft);font-family:var(--mono)">ENABLE_MULTI_PROTOCOL 默认 OFF</text>
+      <text x="36" y="305"  font-size="9" style="fill:var(--ink-soft);font-family:var(--mono)">protocol_priority() 无 nvlink 条目 → 落 0，rdma=2 永远胜出</text>
+    </svg>
+    <figcaption><b>放置层选对了副本，传输层却可能走错通路。</b>transfer engine 依据目标 segment 发布的 protocol 选 transport，没有任何机架/NVLink 域判断。因此仅靠机架感知的放置策略，无法实现「写走 NVLink、跨机架读回落 RDMA」——这是必要条件，不是充分条件。</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="section-head">
+    <h2>4 · 副本优先级：同机架层插在哪里</h2>
+    <p>同机架层位于两个 local 层之后、远端之前。空 rack_id 时逐字节等价于历史行为，机架感知是纯 opt-in。</p>
+  </div>
+
+  <figure>
+    <svg viewBox="0 0 1000 150" role="img" aria-label="副本选择优先级阶梯：本机内存、本机 SSD、同机架内存、远端内存、远端 SSD、本地磁盘、DFS、DISK">
+      <rect x="10" y="34" width="134" height="52" style="fill:var(--surface);stroke:var(--ink-soft)" stroke-width="1.4"/>
+      <text x="77" y="56" text-anchor="middle" font-size="10.5" font-weight="400" style="font-family:var(--mono);fill:var(--ink)">local MEMORY</text>
+      <text x="77" y="72" text-anchor="middle" font-size="8.5" style="font-family:var(--mono);fill:var(--ink-faint)">本机内存</text>
+      <text x="150" y="64" text-anchor="middle" font-size="11" style="font-family:var(--mono);fill:var(--ink-faint)">&gt;</text>
+      <rect x="157" y="34" width="134" height="52" style="fill:var(--surface);stroke:var(--ink-soft)" stroke-width="1.4"/>
+      <text x="224" y="56" text-anchor="middle" font-size="10.5" font-weight="400" style="font-family:var(--mono);fill:var(--ink)">local NOF_SSD</text>
+      <text x="224" y="72" text-anchor="middle" font-size="8.5" style="font-family:var(--mono);fill:var(--ink-faint)">本机 SSD</text>
+      <text x="298" y="64" text-anchor="middle" font-size="11" style="font-family:var(--mono);fill:var(--ink-faint)">&gt;</text>
+      <rect x="304" y="34" width="134" height="52" style="fill:var(--nvlink-wash);stroke:var(--nvlink)" stroke-width="2"/>
+      <text x="371" y="56" text-anchor="middle" font-size="10.5" font-weight="600" style="font-family:var(--mono);fill:var(--ink)">同机架 MEMORY</text>
+      <text x="371" y="72" text-anchor="middle" font-size="8.5" style="font-family:var(--mono);fill:var(--ink-faint)">NVLink 域内</text>
+      <text x="371" y="26" text-anchor="middle" font-size="10" font-weight="600" style="font-family:var(--mono);fill:var(--nvlink)">▼ 本次新增</text>
+      <text x="444" y="64" text-anchor="middle" font-size="11" style="font-family:var(--mono);fill:var(--ink-faint)">&gt;</text>
+      <rect x="451" y="34" width="134" height="52" style="fill:var(--rdma-wash);stroke:var(--rdma)" stroke-width="1.4"/>
+      <text x="518" y="56" text-anchor="middle" font-size="10.5" font-weight="400" style="font-family:var(--mono);fill:var(--ink)">远端 MEMORY</text>
+      <text x="518" y="72" text-anchor="middle" font-size="8.5" style="font-family:var(--mono);fill:var(--ink-faint)">跨机架 RDMA</text>
+      <text x="592" y="64" text-anchor="middle" font-size="11" style="font-family:var(--mono);fill:var(--ink-faint)">&gt;</text>
+      <rect x="598" y="34" width="82" height="52" style="fill:var(--rdma-wash);stroke:var(--rdma)" stroke-width="1.4"/>
+      <text x="639" y="64" text-anchor="middle" font-size="9.5" font-weight="400" style="font-family:var(--mono);fill:var(--ink)">远端 NOF_SSD</text>
+      <text x="686" y="64" text-anchor="middle" font-size="11" style="font-family:var(--mono);fill:var(--ink-faint)">&gt;</text>
+      <rect x="693" y="34" width="82" height="52" style="fill:var(--surface-sunk);stroke:var(--rule)" stroke-width="1.4"/>
+      <text x="734" y="64" text-anchor="middle" font-size="9.5" font-weight="400" style="font-family:var(--mono);fill:var(--ink)">LOCAL_DISK</text>
+      <text x="782" y="64" text-anchor="middle" font-size="11" style="font-family:var(--mono);fill:var(--ink-faint)">&gt;</text>
+      <rect x="788" y="34" width="82" height="52" style="fill:var(--surface-sunk);stroke:var(--rule)" stroke-width="1.4"/>
+      <text x="829" y="64" text-anchor="middle" font-size="9.5" font-weight="400" style="font-family:var(--mono);fill:var(--ink)">DFS</text>
+      <text x="876" y="64" text-anchor="middle" font-size="11" style="font-family:var(--mono);fill:var(--ink-faint)">&gt;</text>
+      <rect x="883" y="34" width="82" height="52" style="fill:var(--surface-sunk);stroke:var(--rule)" stroke-width="1.4"/>
+      <text x="924" y="64" text-anchor="middle" font-size="9.5" font-weight="400" style="font-family:var(--mono);fill:var(--ink)">DISK</text>
+      <text x="10" y="112" font-size="10" style="font-family:var(--mono);fill:var(--ink-soft)">评分机制（issue #2516）只在远端副本之间排序，不会把跨机架副本提到同机架之前。</text>
+      <text x="10" y="132" font-size="10" style="font-family:var(--mono);fill:var(--alarm)">注意：本机 NOF_SSD 仍优先于同机架 MEMORY —— 沿用既有行为，本次未改动。</text>
+    </svg>
+    <figcaption><b>无 rack_id 的副本被视为远端</b>，因此老 master 或未配置机架的节点行为完全不变。在 GB300 上「本机 SSD 优先于同机架 NVLink DRAM」是否合理值得单独决策：NVLink DRAM 约 900 GB/s 量级，本地 NVMe 约 10 GB/s 量级。</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="section-head">
+    <h2>5 · 各角色怎么配</h2>
+    <p>rack_id 必须在 mount segment 之前设好，否则 segment 带不上机架身份。配置文件优先级高于环境变量。</p>
+  </div>
+
+  <div class="cards">
+    <div class="card">
+      <span class="role">Prefill 节点</span>
+      <h3>写入侧 · strict</h3>
+      <pre><span class="cm"># 按所在机架填</span>
+MOONCAKE_RACK_ID=<span class="st">rack0</span>
+MOONCAKE_STRICT_RACK=<span class="st">true</span></pre>
+      <p>master 只在 rack0 分配副本；rack0 满则触发淘汰并返回 <code>NO_AVAILABLE_HANDLE</code>，不写到其他机架。</p>
+    </div>
+    <div class="card">
+      <span class="role">Decode 节点</span>
+      <h3>读取侧 · 软偏好</h3>
+      <pre><span class="cm"># strict 不要开</span>
+MOONCAKE_RACK_ID=<span class="st">rack0</span>
+MOONCAKE_STRICT_RACK=<span class="st">false</span></pre>
+      <p>优先读同机架副本，没有则读跨机架。strict 只影响写入放置，开在 decode 上没有收益，还会在 decode 自身回填时意外限制放置。</p>
+    </div>
+    <div class="card">
+      <span class="role">Store 节点</span>
+      <h3>机架信息的来源</h3>
+      <pre><span class="cm"># 不能省</span>
+MOONCAKE_RACK_ID=<span class="st">rack0</span></pre>
+      <p>它 mount 的 segment 靠这个字段进入 master 的 <code>RackSegmentIndex</code>。整套机制的数据来源，漏配则机架感知静默失效。</p>
+    </div>
+    <div class="card">
+      <span class="role">Master</span>
+      <h3>无需配置</h3>
+      <pre><span class="cm"># 观察放置决策</span>
+VLOG(1)
+<span class="cm"># rack_serving_segments=18</span></pre>
+      <p>从各 segment 的 rack_id 自动建索引。建议按机架监控容量与淘汰率——strict 下单机架写满即失败，没有跨机架兜底。</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="section-head">
+    <h2>6 · 要让 NVLink 真正进入数据路径，还差四步</h2>
+    <p>以下改动都在 transfer engine 侧，不在 Mooncake Store 侧。</p>
+  </div>
+
+  <div class="blockers">
+    <div class="blocker">
+      <div>
+        <h3><code>protocol_priority()</code> 加入 nvlink</h3>
+        <p>当前没有 nvlink 条目，落到默认值 0，而 rdma 是 2 —— rdma 永远胜出，NVLink 永远不会被选中。需要让 nvlink 优先级高于 rdma。</p>
+      </div>
+    </div>
+    <div class="blocker">
+      <div>
+        <h3>为 nvlink 增加机架可达性门控</h3>
+        <p>类比 <code>isLocalIpcReachableTarget()</code>，但判据是 rack_id / NVLink clique 而非 hostname。跨域时跳过 nvlink buffer，退到 rdma。这是「跨机架可读」的前提。</p>
+      </div>
+    </div>
+    <div class="blocker">
+      <div>
+        <h3>store 节点以多协议注册 segment</h3>
+        <p>注册为 <code>"nvlink,rdma"</code>，并开启 <code>ENABLE_MULTI_PROTOCOL</code>（默认 OFF）。同一块 buffer 两条通路都可达，才谈得上优先与回落。</p>
+      </div>
+    </div>
+    <div class="blocker">
+      <div>
+        <h3>改 Store 的分配路径，让 segment 能导出 fabric handle</h3>
+        <p>最底层的一道坎，也是最大的未知量。<code>NvlinkTransport::registerLocalMemory</code> 在 fabric 模式下先调 <code>cuMemRetainAllocationHandle()</code>，内存不是 <code>cuMemCreate</code> 分配的就打一条 WARNING 然后 <code>return 0</code> —— <b>什么都不注册</b>，远端根本无法通过 NVLink 访问。而 Store 当前两条分配路径都不满足：默认是 <code>aligned_alloc</code> / numa / hugepage，<code>USE_VRAM_SEGMENT=ON</code> 下 <code>protocol=nvlink</code> 走的是 <code>cudaMalloc</code>，都不是 <code>cuMemCreate</code>。需要改 <code>client_buffer_allocation.cpp</code>，不是配个环境变量能解决的。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="section-head">
+    <h2>7 · 状态与风险</h2>
+  </div>
+
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr><th>项</th><th>状态</th><th>说明</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>放置层机架感知</td>
+          <td><span class="pill done">已实现</span></td>
+          <td>master strict / soft 两种模式，reader 同机架优先</td>
+        </tr>
+        <tr>
+          <td>transport 层 NVLink 选路</td>
+          <td><span class="pill block">阻塞</span></td>
+          <td>见第 6 节四项改动；不做则 NVLink 不进数据路径</td>
+        </tr>
+        <tr>
+          <td>segment 导出到 fabric</td>
+          <td><span class="pill block">阻塞</span></td>
+          <td>Store 三条分配路径全都拿不到 fabric handle；nvlink_intra 名字带 Fabric，实现其实是 cudaMalloc + CUDA IPC，仅限单机</td>
+        </tr>
+        <tr>
+          <td>本机 NOF_SSD vs 同机架 MEMORY</td>
+          <td><span class="pill todo">待决策</span></td>
+          <td>当前 SSD 优先，GB300 上可能不合理</td>
+        </tr>
+        <tr>
+          <td>strict 模式容量水位</td>
+          <td><span class="pill todo">需监控</span></td>
+          <td>单机架写满即失败，无跨机架兜底；按机架监控容量与淘汰率</td>
+        </tr>
+        <tr>
+          <td>replica_num 与机架规模</td>
+          <td><span class="pill todo">需校验</span></td>
+          <td>strict 下 replica_num ≤ 本机架可服务 segment 数，否则分配必然失败</td>
+        </tr>
+        <tr>
+          <td>跨机架读热点</td>
+          <td><span class="pill todo">需观察</span></td>
+          <td>某机架产出的 KV 被其他机架大量读取时，跨机架 RDMA 可能成为瓶颈；可考虑按机架做副本</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<footer>
+  <p><b>验证情况：</b>Python 配置用例 41 个全部通过（含 6 个 rack 用例）。新增 C++ 用例：副本选择 9 个、segment 机架索引生命周期 2 个。机架分层算法已用独立 harness 验证 13 个 case 全通过，含 3 个历史行为回归 case。</p>
+  <p><b>未能执行：</b>C++ 单测在本机无法运行 —— 环境缺少 glog / boost / ylt / tl::expected 且无 apt 源，CMake 无法配置。上述 C++ 用例需在有依赖的环境中复跑。</p>
+</footer>
+
+</div>

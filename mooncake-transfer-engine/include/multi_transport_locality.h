@@ -80,6 +80,53 @@ inline bool isGpuIpcReachableTarget(const std::string& target_segment_name,
     return isLocalIpcReachableTarget(target_segment_name, local_server_name);
 }
 
+// Trim ASCII whitespace from both ends. Rack ids reach us from an environment
+// variable or a YAML field, where a stray trailing space is easy to introduce
+// and would otherwise silently turn a same-rack pair into a cross-rack one.
+inline std::string trimRackId(const std::string& rack_id) {
+    auto first = rack_id.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) return {};
+    auto last = rack_id.find_last_not_of(" \t\r\n");
+    return rack_id.substr(first, last - first + 1);
+}
+
+// Whether a cross-node NVLink (MNNVL fabric) transport can reach the target.
+//
+// Unlike GPU IPC, MNNVL spans every node of one NVLink domain, so the gate is
+// the domain boundary rather than the host boundary. That boundary is physical
+// and software cannot cross it: a fabric handle exported on one rack cannot be
+// imported on another, and the import failure surfaces as a transfer error
+// rather than a degradation. The decision is therefore made before choosing the
+// transport, not after a failed import.
+//
+// `Unknown` is deliberately distinct from `Unreachable`: an unset rack id means
+// the deployment has not told us anything, which is not the same as having told
+// us the racks differ. Callers downgrade on both, but only `Unreachable` is a
+// statement about the topology and warrants an error when no fallback exists.
+enum class RackReachability { Reachable, Unreachable, Unknown };
+
+inline RackReachability rackReachabilityForNvlink(
+    const std::string& target_segment_name,
+    const std::string& local_server_name, const std::string& target_rack_id,
+    const std::string& local_rack_id) {
+    // Same host is always inside the local NVLink domain, whatever the rack
+    // ids say. Checking this first keeps single-node deployments -- which have
+    // no reason to configure a rack id -- working untouched.
+    if (isLocalIpcReachableTarget(target_segment_name, local_server_name)) {
+        return RackReachability::Reachable;
+    }
+    const std::string local = trimRackId(local_rack_id);
+    const std::string target = trimRackId(target_rack_id);
+    if (local.empty() || target.empty()) {
+        return RackReachability::Unknown;
+    }
+    // Rack ids are operator-assigned labels compared for exact equality. They
+    // are not hostnames, so the case-insensitive comparison used for segment
+    // names does not apply: "Rack0" and "rack0" may well be two racks.
+    return local == target ? RackReachability::Reachable
+                           : RackReachability::Unreachable;
+}
+
 // Compatibility name retained for existing callers/tests.
 inline bool isHipReachableTarget(const std::string& target_segment_name,
                                  const std::string& local_server_name) {

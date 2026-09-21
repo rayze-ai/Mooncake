@@ -10,6 +10,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "allocation_strategy.h"
@@ -24,6 +25,10 @@
 namespace mooncake {
 using HostSegmentIndex =
     std::map<std::string, std::map<std::string, std::set<UUID>>>;
+
+// segment name -> rack_id. Maintained alongside segments_by_host_ for
+// rack-affinity (NVLink-domain) placement decisions on the master.
+using RackSegmentIndex = std::unordered_map<std::string, std::string>;
 
 struct MountedSegment {
     Segment segment;
@@ -310,10 +315,12 @@ class ScopedAllocatorAccess {
         const AllocatorManager& allocator_manager,
         const HostSegmentIndex& segments_by_host,
         const std::unordered_map<std::string, UUID>& client_by_name,
+        const RackSegmentIndex& segment_rack_by_name,
         std::shared_mutex& mutex)
         : allocator_manager_(allocator_manager),
           segments_by_host_(&segments_by_host),
           client_by_name_(&client_by_name),
+          segment_rack_by_name_(&segment_rack_by_name),
           lock_(mutex) {}
 
     const AllocatorManager& getAllocatorManager() const {
@@ -329,10 +336,19 @@ class ScopedAllocatorAccess {
 
     std::optional<UUID> GetOwnerClientId(const std::string& segment_name) const;
 
+    // Rack affinity helpers. Rack ids come from the rack_id field segments
+    // carry at mount time; segments mounted without one are invisible here.
+    std::optional<std::string> GetSegmentRackId(
+        const std::string& segment_name) const;
+
+    std::unordered_set<std::string> GetRackSegmentNames(
+        const std::string& rack_id) const;
+
    private:
     const AllocatorManager& allocator_manager_;
     const HostSegmentIndex* segments_by_host_{nullptr};
     const std::unordered_map<std::string, UUID>* client_by_name_{nullptr};
+    const RackSegmentIndex* segment_rack_by_name_{nullptr};
     std::shared_lock<std::shared_mutex> lock_;
 };
 
@@ -414,7 +430,8 @@ class SegmentManager {
      */
     ScopedAllocatorAccess getAllocatorAccess() {
         return ScopedAllocatorAccess(allocator_manager_, segments_by_host_,
-                                     client_by_name_, segment_mutex_);
+                                     client_by_name_, segment_rack_by_name_,
+                                     segment_mutex_);
     }
 
     SegmentView getView() const { return SegmentView(this); }
@@ -472,6 +489,7 @@ class SegmentManager {
         segment_id_by_name_;             // segment name -> segment_id
     HostSegmentIndex segments_by_host_;  // host_id -> segment name -> segment
                                          // ids for allocatable segments
+    RackSegmentIndex segment_rack_by_name_;  // segment name -> rack_id
     friend class ScopedSegmentAccess;
     friend class SegmentTest;        // for unit tests
     friend class SegmentView;        // for fork serialize

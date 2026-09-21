@@ -1,0 +1,1132 @@
+<title>NVL72 部署参考</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --ground: #f2f4f6;
+    --surface: #ffffff;
+    --surface-sunk: #e7ebef;
+    --ink: #161b22;
+    --ink-soft: #4a5561;
+    --ink-faint: #76838f;
+    --rule: #cfd8e0;
+    --nvlink: #0f7d84;
+    --nvlink-wash: #d9edee;
+    --rdma: #6b7a89;
+    --rdma-wash: #dfe5ea;
+    --ctrl: #5b4d8f;
+    --ctrl-wash: #e4e0f0;
+    --alarm: #a8341f;
+    --alarm-wash: #f6e2dd;
+    --ok: #3d6b34;
+    --ok-wash: #e2ecdd;
+    --sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    --cond: "IBM Plex Sans Condensed", "IBM Plex Sans", ui-sans-serif, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #10141a;
+      --surface: #191f27;
+      --surface-sunk: #0b0e13;
+      --ink: #e6ebf0;
+      --ink-soft: #a9b6c2;
+      --ink-faint: #7d8b98;
+      --rule: #2d3742;
+      --nvlink: #4dd4dc;
+      --nvlink-wash: #103336;
+      --rdma: #8c9bab;
+      --rdma-wash: #222a33;
+      --ctrl: #a99ad8;
+      --ctrl-wash: #241f33;
+      --alarm: #f08163;
+      --alarm-wash: #371a13;
+      --ok: #8fc47f;
+      --ok-wash: #1b2a17;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #10141a;
+    --surface: #191f27;
+    --surface-sunk: #0b0e13;
+    --ink: #e6ebf0;
+    --ink-soft: #a9b6c2;
+    --ink-faint: #7d8b98;
+    --rule: #2d3742;
+    --nvlink: #4dd4dc;
+    --nvlink-wash: #103336;
+    --rdma: #8c9bab;
+    --rdma-wash: #222a33;
+    --ctrl: #a99ad8;
+    --ctrl-wash: #241f33;
+    --alarm: #f08163;
+    --alarm-wash: #371a13;
+    --ok: #8fc47f;
+    --ok-wash: #1b2a17;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 56px 28px 96px;
+    display: flex;
+    flex-direction: column;
+    gap: 56px;
+  }
+  .eyebrow {
+    font-family: var(--cond);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  h1 {
+    font-family: var(--cond);
+    font-size: clamp(30px, 5vw, 46px);
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+    margin: 6px 0 0;
+    text-wrap: balance;
+  }
+  .lede { font-size: 17px; color: var(--ink-soft); max-width: 62ch; margin: 14px 0 0; }
+  h2 {
+    font-family: var(--cond);
+    font-size: 25px;
+    font-weight: 600;
+    margin: 0;
+    letter-spacing: -0.005em;
+  }
+  h3 {
+    font-family: var(--cond);
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0 0 8px;
+  }
+  .section-head { display: flex; flex-direction: column; gap: 4px; margin-bottom: 22px; }
+  .section-head p { margin: 0; color: var(--ink-soft); max-width: 68ch; }
+  section > p { color: var(--ink-soft); max-width: 68ch; }
+  code {
+    font-family: var(--mono);
+    font-size: 0.88em;
+    background: var(--surface-sunk);
+    padding: 1px 5px;
+    border-radius: 2px;
+  }
+  pre {
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.55;
+    background: var(--surface-sunk);
+    border: 1px solid var(--rule);
+    padding: 14px 16px;
+    overflow-x: auto;
+    margin: 0;
+  }
+  pre code { background: none; padding: 0; font-size: inherit; }
+  figure { margin: 0; }
+  figure svg { max-width: 100%; height: auto; display: block; background: var(--surface); border: 1px solid var(--rule); }
+  figcaption { font-size: 13.5px; color: var(--ink-faint); margin-top: 10px; max-width: 72ch; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  .tbl-wrap { border: 1px solid var(--rule); background: var(--surface); overflow-x: auto; }
+  th, td { text-align: left; padding: 9px 13px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th {
+    font-family: var(--cond);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    background: var(--surface-sunk);
+    white-space: nowrap;
+  }
+  tr:last-child td { border-bottom: none; }
+  td code { white-space: nowrap; }
+  .num { font-variant-numeric: tabular-nums; }
+  .pill {
+    display: inline-block;
+    font-family: var(--cond);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 2px;
+    white-space: nowrap;
+  }
+  .pill.ok { background: var(--ok-wash); color: var(--ok); }
+  .pill.no { background: var(--alarm-wash); color: var(--alarm); }
+  .pill.nv { background: var(--nvlink-wash); color: var(--nvlink); }
+  .pill.rd { background: var(--rdma-wash); color: var(--rdma); }
+  .pill.ct { background: var(--ctrl-wash); color: var(--ctrl); }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(275px, 1fr)); gap: 18px; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .card p { margin: 0; font-size: 14.5px; color: var(--ink-soft); }
+  .card .role {
+    font-family: var(--cond);
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .warn {
+    border-left: 3px solid var(--alarm);
+    background: var(--alarm-wash);
+    padding: 14px 18px;
+    font-size: 14.5px;
+  }
+  .warn strong { color: var(--alarm); }
+  .warn p { margin: 0; }
+  .warn p + p { margin-top: 8px; }
+  .note {
+    border-left: 3px solid var(--rule);
+    background: var(--surface);
+    padding: 14px 18px;
+    font-size: 14.5px;
+    color: var(--ink-soft);
+  }
+  .note p { margin: 0; }
+  .stack { display: flex; flex-direction: column; gap: 16px; }
+  .stack-lg { display: flex; flex-direction: column; gap: 26px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 13px; color: var(--ink-soft); margin-top: 12px; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .swatch { width: 22px; height: 0; border-top-width: 2px; border-top-style: solid; display: inline-block; }
+  a { color: inherit; text-decoration-color: var(--ink-faint); text-underline-offset: 2px; }
+  a:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--nvlink); outline-offset: 2px; }
+  hr { border: none; border-top: 1px solid var(--rule); margin: 0; }
+  .files { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+  .file {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    padding: 13px 15px;
+    font-size: 14px;
+  }
+  .file .fn { font-family: var(--mono); font-size: 13px; font-weight: 500; }
+  .file p { margin: 5px 0 0; color: var(--ink-soft); font-size: 13.5px; }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">Mooncake · 部署参考</div>
+  <h1>4 × GB300 NVL72 机架感知部署</h1>
+  <p class="lede">
+    72 台机器，4 个 NVL72 机架。逻辑上有 master、store server、client 三个角色，
+    但<strong>产物只有一个 wheel</strong>——构建一次，三边装同一个包，区别在启动命令和配置。
+    本文讲每个角色怎么构建、怎么配、数据怎么走。
+  </p>
+</header>
+
+<section>
+  <div class="section-head">
+    <div class="eyebrow">01</div>
+    <h2>三个角色，一个 wheel</h2>
+    <p>
+      先破除一个容易产生的误解：不需要分别构建三份东西。
+      <code>mooncake_master</code> 二进制、<code>store.so</code>、<code>engine.so</code>
+      都打进同一个 wheel（<code>scripts/build_wheel.sh:63</code> 拷 master 二进制）。
+    </p>
+  </div>
+
+  <figure>
+    <svg viewBox="0 0 1000 250" role="img" aria-label="一次 cmake 构建产出一个 wheel，wheel 内含 master 二进制与 store、engine 两个 Python 扩展，三个角色都安装这同一个 wheel，只是启动命令与配置不同">
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+
+      <!-- build -->
+      <rect x="24" y="86" width="150" height="78" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <text x="99" y="112" text-anchor="middle" font-size="13" font-weight="600" fill="currentColor">cmake + build</text>
+      <text x="99" y="131" text-anchor="middle" font-size="11" fill="currentColor" opacity="0.72">build_wheel.sh</text>
+      <text x="99" y="148" text-anchor="middle" font-size="11" fill="currentColor" opacity="0.72">跑一次</text>
+
+      <line x1="174" y1="125" x2="222" y2="125" stroke="currentColor" stroke-width="1.5" marker-end="url(#ar)" color="currentColor"/>
+
+      <!-- wheel -->
+      <rect x="228" y="62" width="196" height="126" fill="none" stroke="currentColor" stroke-width="2"/>
+      <text x="326" y="84" text-anchor="middle" font-size="13" font-weight="600" fill="currentColor">mooncake-*.whl</text>
+      <line x1="228" y1="94" x2="424" y2="94" stroke="currentColor" stroke-width="1" opacity="0.4"/>
+      <text x="244" y="114" font-size="11.5" font-family="monospace" fill="currentColor">mooncake_master</text>
+      <text x="244" y="134" font-size="11.5" font-family="monospace" fill="currentColor">store.so</text>
+      <text x="244" y="154" font-size="11.5" font-family="monospace" fill="currentColor">engine.so</text>
+      <text x="244" y="174" font-size="11.5" font-family="monospace" fill="currentColor" opacity="0.7">+ python pkg</text>
+
+      <line x1="424" y1="125" x2="472" y2="125" stroke="currentColor" stroke-width="1.5" marker-end="url(#ar)"/>
+      <text x="448" y="116" text-anchor="middle" font-size="10.5" fill="currentColor" opacity="0.7">pip install</text>
+
+      <!-- three roles -->
+      <rect x="478" y="24" width="270" height="62" fill="none" stroke="var(--ctrl)" stroke-width="1.5"/>
+      <text x="494" y="46" font-size="12.5" font-weight="600" fill="var(--ctrl)">master</text>
+      <text x="494" y="64" font-size="11" font-family="monospace" fill="currentColor" opacity="0.78">mooncake_master --port=50051</text>
+      <text x="494" y="79" font-size="10.5" fill="currentColor" opacity="0.62">无需机架配置</text>
+
+      <rect x="478" y="94" width="270" height="62" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <text x="494" y="116" font-size="12.5" font-weight="600" fill="currentColor">store server</text>
+      <text x="494" y="134" font-size="10.5" font-family="monospace" fill="currentColor" opacity="0.78">-m mooncake.mooncake_store_service</text>
+      <text x="494" y="149" font-size="10.5" fill="currentColor" opacity="0.62">配 rack_id + global_segment_size</text>
+
+      <rect x="478" y="164" width="270" height="62" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <text x="494" y="186" font-size="12.5" font-weight="600" fill="currentColor">client（prefill / decode）</text>
+      <text x="494" y="204" font-size="11" font-family="monospace" fill="currentColor" opacity="0.78">import mooncake / connector</text>
+      <text x="494" y="219" font-size="10.5" fill="currentColor" opacity="0.62">配 rack_id + strict_rack</text>
+
+      <line x1="472" y1="125" x2="472" y2="55" stroke="currentColor" stroke-width="1.2" opacity="0.5"/>
+      <line x1="472" y1="125" x2="472" y2="195" stroke="currentColor" stroke-width="1.2" opacity="0.5"/>
+      <line x1="472" y1="55" x2="478" y2="55" stroke="currentColor" stroke-width="1.2" opacity="0.5"/>
+      <line x1="472" y1="125" x2="478" y2="125" stroke="currentColor" stroke-width="1.2" opacity="0.5"/>
+      <line x1="472" y1="195" x2="478" y2="195" stroke="currentColor" stroke-width="1.2" opacity="0.5"/>
+
+      <!-- annotation -->
+      <text x="772" y="46" font-size="11.5" fill="currentColor" opacity="0.75">同一个包</text>
+      <text x="772" y="64" font-size="11.5" fill="currentColor" opacity="0.75">不同启动命令</text>
+      <text x="772" y="82" font-size="11.5" fill="currentColor" opacity="0.75">不同配置</text>
+      <line x1="754" y1="55" x2="764" y2="55" stroke="currentColor" stroke-width="1" opacity="0.5"/>
+      <line x1="754" y1="125" x2="764" y2="125" stroke="currentColor" stroke-width="1" opacity="0.5"/>
+      <line x1="754" y1="195" x2="764" y2="195" stroke="currentColor" stroke-width="1" opacity="0.5"/>
+      <path d="M 764 55 L 764 195" stroke="currentColor" stroke-width="1" opacity="0.5" fill="none"/>
+    </svg>
+    <figcaption>
+      一次构建产出一个 wheel。三个角色 <code>pip install</code> 同一个包，
+      靠启动命令和配置区分职责。store server 其实就是一个贡献
+      <code>global_segment</code> 的 client——<strong>没有独立的 store server 二进制</strong>。
+    </figcaption>
+  </figure>
+
+  <div class="tbl-wrap" style="margin-top:22px">
+    <table>
+      <thead>
+        <tr><th>角色</th><th>用 wheel 里的什么</th><th>需要 GPU 编译开关</th><th>机架配置</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="pill ct">master</span></td>
+          <td><code>mooncake_master</code> 二进制</td>
+          <td><span class="pill ok">不需要</span> 只管元数据，不链接 CUDA</td>
+          <td>无。从各 segment 上报的 <code>rack_id</code> 自动建索引</td>
+        </tr>
+        <tr>
+          <td><span class="pill rd">store server</span></td>
+          <td><code>store.so</code> + <code>engine.so</code></td>
+          <td>仅验证 fabric 时需要</td>
+          <td><code>rack_id</code> <strong>必填</strong>，这是整套机制的数据来源</td>
+        </tr>
+        <tr>
+          <td><span class="pill rd">client</span></td>
+          <td><code>store.so</code> + <code>engine.so</code></td>
+          <td><span class="pill ok">不需要</span> 只分配 local_buffer</td>
+          <td><code>rack_id</code> + <code>strict_rack</code>（prefill 开、decode 不开）</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note" style="margin-top:18px">
+    <p>
+      GPU 开关（<code>USE_VRAM_SEGMENT</code> + <code>USE_MNNVL</code>）是<strong>编译期</strong>的，
+      所以一旦打开，三边装的都是带开关的同一个包。但它只对 store server 有意义——
+      分配 <code>global_segment</code> 的是它。client 侧只分配 <code>local_buffer</code>，
+      不走 VRAM 分支。
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="section-head">
+    <div class="eyebrow">02</div>
+    <h2>架构：控制面全局，数据面按机架</h2>
+    <p>
+      master 是全局单点（或 HA 多副本），与 72 个节点都通信，但只走控制面——
+      元数据和放置决策。真正的 KV 数据完全不经过它。
+    </p>
+  </div>
+
+  <figure>
+    <svg viewBox="0 0 1000 470" role="img" aria-label="master 位于顶部，通过控制面连接四个 NVL72 机架；每个机架内 18 个节点由 NVLink 域连通，同机架内 prefill 写入与 decode 读取都留在机架内；机架之间只有 RDMA spine，带宽约为机架内的十八分之一">
+      <!-- master -->
+      <rect x="396" y="18" width="208" height="64" fill="none" stroke="var(--ctrl)" stroke-width="2"/>
+      <text x="500" y="41" text-anchor="middle" font-size="13.5" font-weight="600" fill="var(--ctrl)">master</text>
+      <text x="500" y="59" text-anchor="middle" font-size="10.5" font-family="monospace" fill="currentColor" opacity="0.75">:50051 RPC · :9003 metrics</text>
+      <text x="500" y="74" text-anchor="middle" font-size="10.5" fill="currentColor" opacity="0.65">RackSegmentIndex · 放置决策</text>
+
+      <!-- control plane fan-out -->
+      <path d="M 500 82 L 500 100" stroke="var(--ctrl)" stroke-width="1.2" fill="none"/>
+      <path d="M 140 100 L 860 100" stroke="var(--ctrl)" stroke-width="1.2" fill="none"/>
+      <path d="M 140 100 L 140 126" stroke="var(--ctrl)" stroke-width="1.2" stroke-dasharray="3 3" fill="none"/>
+      <path d="M 380 100 L 380 126" stroke="var(--ctrl)" stroke-width="1.2" stroke-dasharray="3 3" fill="none"/>
+      <path d="M 620 100 L 620 126" stroke="var(--ctrl)" stroke-width="1.2" stroke-dasharray="3 3" fill="none"/>
+      <path d="M 860 100 L 860 126" stroke="var(--ctrl)" stroke-width="1.2" stroke-dasharray="3 3" fill="none"/>
+      <text x="512" y="95" font-size="10.5" fill="var(--ctrl)">控制面：mount 上报 rack_id · 查询副本位置（不传数据）</text>
+
+      <!-- four racks -->
+      <g>
+        <rect x="40" y="126" width="200" height="150" fill="var(--nvlink-wash)" stroke="var(--nvlink)" stroke-width="1.5"/>
+        <text x="140" y="147" text-anchor="middle" font-size="12.5" font-weight="600" fill="var(--nvlink)">rack0</text>
+        <text x="140" y="164" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.72">NVL72 · 18 节点 · 72 GPU</text>
+        <text x="140" y="180" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.72">一个 NVLink / IMEX 域</text>
+        <rect x="58" y="190" width="164" height="28" fill="var(--surface)" stroke="currentColor" stroke-width="0.8"/>
+        <text x="140" y="208" text-anchor="middle" font-size="10.5" fill="currentColor">store server × 18</text>
+        <rect x="58" y="224" width="78" height="28" fill="var(--surface)" stroke="currentColor" stroke-width="0.8"/>
+        <text x="97" y="242" text-anchor="middle" font-size="10.5" fill="currentColor">prefill</text>
+        <rect x="144" y="224" width="78" height="28" fill="var(--surface)" stroke="currentColor" stroke-width="0.8"/>
+        <text x="183" y="242" text-anchor="middle" font-size="10.5" fill="currentColor">decode</text>
+        <text x="140" y="268" text-anchor="middle" font-size="10" fill="var(--nvlink)">机架内 130 TB/s all-to-all</text>
+      </g>
+      <g>
+        <rect x="280" y="126" width="200" height="150" fill="var(--nvlink-wash)" stroke="var(--nvlink)" stroke-width="1.5"/>
+        <text x="380" y="147" text-anchor="middle" font-size="12.5" font-weight="600" fill="var(--nvlink)">rack1</text>
+        <text x="380" y="164" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.72">NVL72 · 18 节点 · 72 GPU</text>
+        <text x="380" y="180" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.72">一个 NVLink / IMEX 域</text>
+        <rect x="298" y="190" width="164" height="28" fill="var(--surface)" stroke="currentColor" stroke-width="0.8"/>
+        <text x="380" y="208" text-anchor="middle" font-size="10.5" fill="currentColor">store server × 18</text>
+        <rect x="298" y="224" width="78" height="28" fill="var(--surface)" stroke="currentColor" stroke-width="0.8"/>
+        <text x="337" y="242" text-anchor="middle" font-size="10.5" fill="currentColor">prefill</text>
+        <rect x="384" y="224" width="78" height="28" fill="var(--surface)" stroke="currentColor" stroke-width="0.8"/>
+        <text x="423" y="242" text-anchor="middle" font-size="10.5" fill="currentColor">decode</text>
+      </g>
+      <g>
+        <rect x="520" y="126" width="200" height="150" fill="var(--nvlink-wash)" stroke="var(--nvlink)" stroke-width="1.5"/>
+        <text x="620" y="147" text-anchor="middle" font-size="12.5" font-weight="600" fill="var(--nvlink)">rack2</text>
+        <text x="620" y="164" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.72">NVL72 · 18 节点 · 72 GPU</text>
+        <text x="620" y="180" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.72">一个 NVLink / IMEX 域</text>
+        <rect x="538" y="190" width="164" height="28" fill="var(--surface)" stroke="currentColor" stroke-width="0.8"/>
+        <text x="620" y="208" text-anchor="middle" font-size="10.5" fill="currentColor">store server × 18</text>
+        <rect x="538" y="224" width="78" height="28" fill="var(--surface)" stroke="currentColor" stroke-width="0.8"/>
+        <text x="577" y="242" text-anchor="middle" font-size="10.5" fill="currentColor">prefill</text>
+        <rect x="624" y="224" width="78" height="28" fill="var(--surface)" stroke="currentColor" stroke-width="0.8"/>
+        <text x="663" y="242" text-anchor="middle" font-size="10.5" fill="currentColor">decode</text>
+      </g>
+      <g>
+        <rect x="760" y="126" width="200" height="150" fill="var(--nvlink-wash)" stroke="var(--nvlink)" stroke-width="1.5"/>
+        <text x="860" y="147" text-anchor="middle" font-size="12.5" font-weight="600" fill="var(--nvlink)">rack3</text>
+        <text x="860" y="164" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.72">NVL72 · 18 节点 · 72 GPU</text>
+        <text x="860" y="180" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.72">一个 NVLink / IMEX 域</text>
+        <rect x="778" y="190" width="164" height="28" fill="var(--surface)" stroke="currentColor" stroke-width="0.8"/>
+        <text x="860" y="208" text-anchor="middle" font-size="10.5" fill="currentColor">store server × 18</text>
+        <rect x="778" y="224" width="78" height="28" fill="var(--surface)" stroke="currentColor" stroke-width="0.8"/>
+        <text x="817" y="242" text-anchor="middle" font-size="10.5" fill="currentColor">prefill</text>
+        <rect x="864" y="224" width="78" height="28" fill="var(--surface)" stroke="currentColor" stroke-width="0.8"/>
+        <text x="903" y="242" text-anchor="middle" font-size="10.5" fill="currentColor">decode</text>
+      </g>
+
+      <!-- rdma spine -->
+      <rect x="40" y="320" width="920" height="46" fill="var(--rdma-wash)" stroke="var(--rdma)" stroke-width="1.5"/>
+      <text x="500" y="341" text-anchor="middle" font-size="12.5" font-weight="600" fill="var(--rdma)">RDMA spine（ConnectX-8, 800 Gb/s ≈ 100 GB/s per port）</text>
+      <text x="500" y="358" text-anchor="middle" font-size="10.5" fill="currentColor" opacity="0.75">机架之间唯一通路 · 约为机架内带宽的 1/18</text>
+
+      <path d="M 140 276 L 140 320" stroke="var(--rdma)" stroke-width="1.5" fill="none"/>
+      <path d="M 380 276 L 380 320" stroke="var(--rdma)" stroke-width="1.5" fill="none"/>
+      <path d="M 620 276 L 620 320" stroke="var(--rdma)" stroke-width="1.5" fill="none"/>
+      <path d="M 860 276 L 860 320" stroke="var(--rdma)" stroke-width="1.5" fill="none"/>
+
+      <!-- bandwidth ratio callout -->
+      <rect x="40" y="392" width="920" height="58" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3"/>
+      <text x="60" y="414" font-size="12" font-weight="600" fill="currentColor">为什么要做机架感知</text>
+      <text x="60" y="434" font-size="11.5" fill="currentColor" opacity="0.8">机架内 NVLink 带宽约为跨机架 RDMA 的 18 倍。把写入锁在本机架，读取优先本机架，收益就来自这个比例。</text>
+    </svg>
+    <figcaption>
+      控制面（紫色虚线）连接 master 与全部 72 节点，只传元数据。
+      数据面分两层：机架内走 NVLink 域（130 TB/s），机架间只有 RDMA spine（约 1/18 带宽）。
+      <code>rack_id</code> 的划分必须与 NVLink / IMEX 域边界完全一致。
+    </figcaption>
+  </figure>
+
+  <div class="legend">
+    <span><i class="swatch" style="border-top-color: var(--ctrl); border-top-style: dashed"></i> 控制面（元数据，不传数据）</span>
+    <span><i class="swatch" style="border-top-color: var(--nvlink)"></i> 机架内 NVLink 域</span>
+    <span><i class="swatch" style="border-top-color: var(--rdma)"></i> 跨机架 RDMA</span>
+  </div>
+
+  <div class="warn" style="margin-top:22px">
+    <p>
+      <strong>rack_id 不是物理机柜位置。</strong>
+      它是 NVLink 域（IMEX domain）标识。一个 NVL72 机架 = 一个 NVLink 域 = 一个 <code>rack_id</code>。
+      让一个 <code>rack_id</code> 跨越两个 NVLink 域，会让 master 以为两组节点间有 NVLink，实际没有。
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="section-head">
+    <div class="eyebrow">03</div>
+    <h2>PD 访问路径：写是硬约束，读是软偏好</h2>
+    <p>
+      这是整套方案的核心语义差异。prefill 写入<strong>不允许</strong>跨机架，
+      decode 读取<strong>优先</strong>同机架但跨机架也必须能读——否则副本在别的机架就会失败。
+    </p>
+  </div>
+
+  <figure>
+    <svg viewBox="0 0 1000 430" role="img" aria-label="左侧 prefill 写入路径：向 master 申请副本位置，master 在 strict 模式下把非本机架的 54 个 segment 放入排除列表，只在本机架 18 个 segment 中分配，本机架满时返回 NO_AVAILABLE_HANDLE 并触发淘汰而不跨机架。右侧 decode 读取路径：master 返回全部副本位置，客户端按优先级挑选，同机架优先，同机架没有则读远端走 RDMA 回落">
+      <defs>
+        <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+        </marker>
+        <marker id="arok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--rdma)"/>
+        </marker>
+      </defs>
+
+      <!-- divider -->
+      <line x1="500" y1="14" x2="500" y2="416" stroke="currentColor" stroke-width="1" opacity="0.25"/>
+
+      <!-- ========== WRITE ========== -->
+      <text x="26" y="30" font-size="13.5" font-weight="600" fill="currentColor">PREFILL 写入 · strict_rack=true</text>
+      <text x="26" y="47" font-size="11" fill="currentColor" opacity="0.7">硬约束：只落本机架</text>
+
+      <!-- prefill node -->
+      <rect x="26" y="62" width="112" height="46" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <text x="82" y="82" text-anchor="middle" font-size="11.5" font-weight="600" fill="currentColor">prefill</text>
+      <text x="82" y="98" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.7">rack0</text>
+
+      <!-- step 1 to master -->
+      <path d="M 138 74 L 300 74" stroke="var(--ctrl)" stroke-width="1.4" marker-end="url(#ar2)" color="var(--ctrl)" fill="none"/>
+      <text x="219" y="67" text-anchor="middle" font-size="10" fill="var(--ctrl)">① Put 申请副本位置</text>
+
+      <rect x="300" y="52" width="88" height="46" fill="none" stroke="var(--ctrl)" stroke-width="1.5"/>
+      <text x="344" y="72" text-anchor="middle" font-size="11.5" font-weight="600" fill="var(--ctrl)">master</text>
+      <text x="344" y="88" text-anchor="middle" font-size="9.5" fill="currentColor" opacity="0.7">AllocateReplicas</text>
+
+      <!-- master decision box -->
+      <rect x="180" y="118" width="288" height="62" fill="var(--surface-sunk)" stroke="currentColor" stroke-width="1"/>
+      <text x="196" y="138" font-size="10.5" font-weight="600" fill="currentColor">② strict 模式的放置决策</text>
+      <text x="196" y="155" font-size="10" font-family="monospace" fill="var(--alarm)">excluded_segments ← 非本机架的 54 个</text>
+      <text x="196" y="171" font-size="10" font-family="monospace" fill="var(--ok)">候选 ← 本机架的 18 个</text>
+
+      <path d="M 344 98 L 344 118" stroke="var(--ctrl)" stroke-width="1.2" fill="none"/>
+
+      <!-- back to prefill -->
+      <path d="M 180 149 L 96 149 L 96 108" stroke="var(--ctrl)" stroke-width="1.4" marker-end="url(#ar2)" color="var(--ctrl)" fill="none"/>
+      <text x="106" y="163" font-size="10" fill="var(--ctrl)">③ 返回本机架位置</text>
+
+      <!-- same rack write -->
+      <rect x="26" y="206" width="200" height="74" fill="var(--nvlink-wash)" stroke="var(--nvlink)" stroke-width="1.5"/>
+      <text x="126" y="228" text-anchor="middle" font-size="11.5" font-weight="600" fill="var(--nvlink)">rack0 store server × 18</text>
+      <text x="126" y="246" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.75">副本全部落在这里</text>
+      <text x="126" y="263" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.75">当前走 RDMA（同机架 leaf）</text>
+
+      <path d="M 82 108 L 82 206" stroke="var(--nvlink)" stroke-width="2" marker-end="url(#ar2)" color="var(--nvlink)" fill="none"/>
+      <text x="92" y="196" font-size="10" fill="var(--nvlink)">④ 写数据</text>
+
+      <!-- cross-rack blocked -->
+      <rect x="262" y="206" width="206" height="74" fill="none" stroke="var(--alarm)" stroke-width="1.3" stroke-dasharray="5 3"/>
+      <text x="365" y="228" text-anchor="middle" font-size="11.5" font-weight="600" fill="var(--alarm)">rack1–3 store server × 54</text>
+      <text x="365" y="246" text-anchor="middle" font-size="10" fill="var(--alarm)">被 master 排除</text>
+      <text x="365" y="263" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.7">永远不会被选中</text>
+
+      <path d="M 226 243 L 256 243" stroke="var(--alarm)" stroke-width="1.5" fill="none"/>
+      <line x1="236" y1="233" x2="248" y2="253" stroke="var(--alarm)" stroke-width="2"/>
+      <line x1="248" y1="233" x2="236" y2="253" stroke="var(--alarm)" stroke-width="2"/>
+
+      <!-- full behavior -->
+      <rect x="26" y="300" width="442" height="66" fill="var(--alarm-wash)" stroke="var(--alarm)" stroke-width="1"/>
+      <text x="42" y="320" font-size="10.5" font-weight="600" fill="var(--alarm)">本机架写满时的行为</text>
+      <text x="42" y="337" font-size="10.5" fill="currentColor">触发淘汰 → 仍不足则返回 <tspan font-family="monospace">NO_AVAILABLE_HANDLE</tspan></text>
+      <text x="42" y="354" font-size="10.5" fill="currentColor"><tspan font-weight="600">不会</tspan>溢出到 rack1–3。容量需按机架单独监控。</text>
+
+      <text x="26" y="392" font-size="10.5" fill="currentColor" opacity="0.75">约束：replica_num ≤ 18（本机架可服务 segment 数）</text>
+      <text x="26" y="409" font-size="10.5" fill="currentColor" opacity="0.75">strict 但 rack_id 为空 → WARNING 并退回非 strict</text>
+
+      <!-- ========== READ ========== -->
+      <text x="526" y="30" font-size="13.5" font-weight="600" fill="currentColor">DECODE 读取 · strict_rack=false</text>
+      <text x="526" y="47" font-size="11" fill="currentColor" opacity="0.7">软偏好：同机架优先，跨机架可回落</text>
+
+      <rect x="526" y="62" width="112" height="46" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <text x="582" y="82" text-anchor="middle" font-size="11.5" font-weight="600" fill="currentColor">decode</text>
+      <text x="582" y="98" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.7">rack0</text>
+
+      <path d="M 638 74 L 800 74" stroke="var(--ctrl)" stroke-width="1.4" marker-end="url(#ar2)" color="var(--ctrl)" fill="none"/>
+      <text x="719" y="67" text-anchor="middle" font-size="10" fill="var(--ctrl)">① Get 查询副本位置</text>
+
+      <rect x="800" y="52" width="88" height="46" fill="none" stroke="var(--ctrl)" stroke-width="1.5"/>
+      <text x="844" y="72" text-anchor="middle" font-size="11.5" font-weight="600" fill="var(--ctrl)">master</text>
+      <text x="844" y="88" text-anchor="middle" font-size="9.5" fill="currentColor" opacity="0.7">返回全部副本</text>
+
+      <path d="M 800 85 L 596 85 L 596 108" stroke="var(--ctrl)" stroke-width="1.4" marker-end="url(#ar2)" color="var(--ctrl)" fill="none"/>
+      <text x="640" y="101" font-size="10" fill="var(--ctrl)">② 全部位置（含跨机架）</text>
+
+      <!-- client-side selection -->
+      <rect x="526" y="118" width="442" height="62" fill="var(--surface-sunk)" stroke="currentColor" stroke-width="1"/>
+      <text x="542" y="138" font-size="10.5" font-weight="600" fill="currentColor">③ 客户端侧 SelectBestReplica（不是 master 决定）</text>
+      <text x="542" y="155" font-size="10" fill="currentColor">按优先级挑：local → 同机架 → 远端。本机架有就用本机架。</text>
+      <text x="542" y="171" font-size="10" fill="currentColor" opacity="0.75">没有 rack_id 的副本被当作远端处理。</text>
+
+      <!-- same rack hit -->
+      <rect x="526" y="206" width="200" height="74" fill="var(--nvlink-wash)" stroke="var(--nvlink)" stroke-width="1.5"/>
+      <text x="626" y="228" text-anchor="middle" font-size="11.5" font-weight="600" fill="var(--nvlink)">rack0 副本</text>
+      <text x="626" y="246" text-anchor="middle" font-size="10" fill="var(--ok)">优先选中</text>
+      <text x="626" y="263" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.75">当前走 RDMA（同机架 leaf）</text>
+
+      <path d="M 582 180 L 582 206" stroke="var(--nvlink)" stroke-width="2" marker-end="url(#ar2)" color="var(--nvlink)" fill="none"/>
+
+      <!-- cross rack fallback -->
+      <rect x="762" y="206" width="206" height="74" fill="var(--rdma-wash)" stroke="var(--rdma)" stroke-width="1.5"/>
+      <text x="865" y="228" text-anchor="middle" font-size="11.5" font-weight="600" fill="var(--rdma)">rack1–3 副本</text>
+      <text x="865" y="246" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.8">同机架没有时回落</text>
+      <text x="865" y="263" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.75">走 RDMA spine</text>
+
+      <path d="M 860 180 L 860 206" stroke="var(--rdma)" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#arok)" color="var(--rdma)" fill="none"/>
+      <text x="870" y="197" font-size="10" fill="var(--rdma)">回落</text>
+
+      <!-- priority ladder -->
+      <rect x="526" y="300" width="442" height="66" fill="var(--surface)" stroke="currentColor" stroke-width="1"/>
+      <text x="542" y="320" font-size="10.5" font-weight="600" fill="currentColor">实际优先级阶梯</text>
+      <text x="542" y="337" font-size="9.5" font-family="monospace" fill="currentColor">local MEM → local NOF_SSD → 同机架 MEM → 远端 MEM</text>
+      <text x="542" y="353" font-size="9.5" font-family="monospace" fill="currentColor">→ 远端 NOF_SSD → LOCAL_DISK → DFS → DISK</text>
+
+      <text x="526" y="392" font-size="10.5" fill="var(--alarm)" opacity="0.9">注意：本地 NOF_SSD 仍优先于同机架 MEMORY（沿用既有行为，本次未改）</text>
+      <text x="526" y="409" font-size="10.5" fill="currentColor" opacity="0.75">decode 不要开 strict：只影响写入，且会限制 chunked prefill 回填</text>
+    </svg>
+    <figcaption>
+      左右两条路径的关键差异：写入时 master 主动<strong>排除</strong>非本机架 segment（54 个），
+      读取时 master 返回<strong>全部</strong>副本、由客户端侧
+      <code>SelectBestReplica</code> 按优先级挑。
+      所以写入的机架约束是服务端强制的，读取的机架偏好是客户端软选择的。
+    </figcaption>
+  </figure>
+
+  <div class="cards" style="margin-top:24px">
+    <div class="card">
+      <div class="role">决策位置</div>
+      <h3>写入：master 侧</h3>
+      <p>
+        <code>MasterService::AllocateReplicas</code> 把非本机架 segment 放入
+        <code>excluded_segments</code>。客户端无从绕过。
+      </p>
+    </div>
+    <div class="card">
+      <div class="role">决策位置</div>
+      <h3>读取：客户端侧</h3>
+      <p>
+        <code>SelectBestReplica</code> 在客户端进程内按 <code>local_rack_id</code> 排序。
+        master 不参与筛选。
+      </p>
+    </div>
+    <div class="card">
+      <div class="role">兼容性</div>
+      <h3>纯 opt-in</h3>
+      <p>
+        <code>rack_id</code> 为空时逐字节等价于历史行为。
+        未配置机架的节点、老版本 master 都不受影响。
+      </p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="section-head">
+    <div class="eyebrow">04</div>
+    <h2>怎么构建</h2>
+    <p>
+      两个场景。先判断你要不要 fabric handle——大多数情况下不要，
+      机架感知本身<strong>不需要任何 GPU 编译开关</strong>。
+    </p>
+  </div>
+
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr><th>场景</th><th>cmake 开关</th><th>Dockerfile</th><th>适用</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>A. 只要机架感知</strong></td>
+          <td><span class="pill ok">无需开关</span></td>
+          <td><code>docker/mooncake.Dockerfile</code>（现成的，一行不改）</td>
+          <td><strong>推荐先做。</strong>收益确定，风险低</td>
+        </tr>
+        <tr>
+          <td>B. 加 fabric handle</td>
+          <td><code>-DUSE_VRAM_SEGMENT=ON</code><br><code>-DUSE_MNNVL=ON</code></td>
+          <td><code>ppio/mooncake-rack.Dockerfile</code></td>
+          <td>仅在隔离节点验证 NVLink 分配侧</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="stack-lg" style="margin-top:28px">
+    <div>
+      <h3>场景 A · 一次构建，三边通用</h3>
+      <pre><code>sudo bash dependencies.sh -y
+
+mkdir -p build &amp;&amp; cd build
+cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build .
+cd ..
+
+OUTPUT_DIR=dist ./scripts/build_wheel.sh
+# 产物：mooncake-wheel/dist/*.whl
+#   含 mooncake_master 二进制、store.so、engine.so、python 包</code></pre>
+    </div>
+
+    <div>
+      <h3>场景 B · 加两个开关</h3>
+      <pre><code>cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DUSE_VRAM_SEGMENT=ON \
+  -DUSE_MNNVL=ON
+
+# cmake 输出必须有这三行，否则开关没生效：
+#   -- VRAM SEGMENT is ON
+#   -- Multi-Node NVLink support is enabled
+#   -- CUDA support is enabled</code></pre>
+      <p style="font-size:14.5px; color:var(--ink-soft); margin-top:12px">
+        两个开关各自都会强制 <code>USE_CUDA=ON</code>。
+        <strong>互斥约束</strong>：<code>USE_MNNVL</code> 不能与
+        <code>USE_HIP</code> / <code>USE_MUSA</code> / <code>USE_UBSHMEM</code> 同开——
+        那些组合会分发到没有对齐 fabric 接口的厂商后端，开关降级为
+        <code>cudaMalloc</code> 并打 WARNING。
+      </p>
+    </div>
+
+    <div>
+      <h3>容器</h3>
+      <pre><code># 场景 A
+docker build -f docker/mooncake.Dockerfile -t mooncake:base .
+
+# 场景 B —— 注意从仓库根执行，构建上下文必须是仓库根
+docker build -f ppio/mooncake-rack.Dockerfile -t mooncake:rack-arm64 .</code></pre>
+    </div>
+  </div>
+
+  <div class="warn" style="margin-top:24px">
+    <p>
+      <strong>GB300 是 Grace，aarch64。</strong>
+      镜像必须在 arm64 机器上构建，x86_64 镜像跑不起来。
+      跨平台构建需要 qemu，很慢，只适合应急：
+      <code>docker buildx build --platform linux/arm64 ...</code>
+    </p>
+  </div>
+
+  <h3 style="margin-top:30px">ppio/mooncake-rack.Dockerfile 与原版的四处差异</h3>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>差异</th><th>为什么</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>加 <code>USE_VRAM_SEGMENT</code> + <code>USE_MNNVL</code></td>
+          <td>两者缺一，<code>MC_STORE_VRAM_FABRIC</code> 就不生效</td>
+        </tr>
+        <tr>
+          <td>cmake 后 grep 三行 STATUS，不符则<strong>构建失败</strong></td>
+          <td>否则这种错配要等到运行时、甚至等到远端读不到数据才暴露</td>
+        </tr>
+        <tr>
+          <td><code>BUILD_UNIT_TESTS=ON</code> 且 builder 阶段跑 ctest</td>
+          <td>这几个用例此前从未在有依赖的环境执行过，镜像构建是第一次真跑。<code>--build-arg RUN_TESTS=0</code> 可跳过</td>
+        </tr>
+        <tr>
+          <td>去掉 <code>WITH_EP=ON</code></td>
+          <td>EP/PG 扩展与机架无关，会拉 torch，构建时间约翻倍</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note" style="margin-top:20px">
+    <p>
+      <code>nvlink_allocator.so</code> 缺失<strong>不影响</strong>本方案。
+      它只被 <code>mooncake-integration/allocator.py</code> 用作推理框架侧的
+      torch 可插拔分配器；store 的 fabric 分配走
+      <code>NvlinkTransport::allocatePinnedLocalMemory</code>，编在 <code>engine.so</code> 里。
+      构建日志里那句 "likely ARM64" 只是文案推测，<code>build.sh</code> 里并没有架构门控。
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="section-head">
+    <div class="eyebrow">05</div>
+    <h2>怎么配置</h2>
+    <p>
+      先记一条优先级规则，它是最容易踩的坑：
+      <strong>配置文件优先于环境变量</strong>。两者同时存在时环境变量<strong>不生效</strong>——
+      <code>load_from_env()</code> 只在没有配置文件时才走。
+      设了 <code>MOONCAKE_RACK_ID</code> 却又指了 <code>--config</code>，机架感知静默失效。
+    </p>
+  </div>
+
+  <div class="stack-lg">
+
+    <div>
+      <h3><span class="pill ct">master</span> &nbsp;不需要任何机架配置</h3>
+      <p style="font-size:14.5px; color:var(--ink-soft); margin:0 0 12px">
+        它从各 segment <code>mount</code> 时上报的 <code>rack_id</code> 自动建
+        <code>RackSegmentIndex</code>。
+      </p>
+      <pre><code>mooncake_master \
+  --port=50051 \
+  --metrics_port=9003 \
+  --v=1              # 必须开，否则看不到放置决策日志</code></pre>
+      <div class="tbl-wrap" style="margin-top:14px">
+        <table>
+          <thead><tr><th>flag</th><th>默认</th><th>NVL72 建议</th></tr></thead>
+          <tbody>
+            <tr><td><code>--port</code></td><td class="num">50051</td><td>保持</td></tr>
+            <tr><td><code>--metrics_port</code></td><td class="num">9003</td><td>保持</td></tr>
+            <tr><td><code>--v</code></td><td class="num">0</td><td><strong>设 1</strong>，否则无放置日志</td></tr>
+            <tr><td><code>--enable_ha</code></td><td>false</td><td>72 节点规模建议开，需 etcd/redis 后端</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <hr>
+
+    <div>
+      <h3><span class="pill rd">store server</span> &nbsp;rack_id 必填，这是数据来源</h3>
+      <p style="font-size:14.5px; color:var(--ink-soft); margin:0 0 12px">
+        省掉这一项，master 的索引就是空的，<strong>整套机架感知完全不工作</strong>。
+        18 台共用一份配置，只改 <code>local_hostname</code>。
+      </p>
+      <pre><code>// /etc/mooncake/store.json
+{
+  "local_hostname": "node-r0-03",
+  "metadata_server": "P2PHANDSHAKE",
+  "master_server_address": "10.0.0.1:50051",
+  "protocol": "rdma",
+  "device_name": "mlx5_0",
+  "global_segment_size": "64gb",
+  "local_buffer_size": "2gb",
+  "rack_id": "rack0",
+  "enable_client_http_server": true,
+  "client_http_port": 9300
+  // store server 不是写入方，不需要 strict_rack
+}</code></pre>
+      <pre style="margin-top:12px"><code>python3 -m mooncake.mooncake_store_service \
+  --config /etc/mooncake/store.json \
+  --port 8080 \
+  -Dlocal_hostname=node-r0-03 \
+  -Drack_id=rack0              # -D 覆盖单项，适合一份配置分发 72 台</code></pre>
+    </div>
+
+    <hr>
+
+    <div>
+      <h3><span class="pill rd">prefill</span> &nbsp;写入侧，开 strict</h3>
+      <pre><code>export MOONCAKE_RACK_ID=rack0        # 按所在机架
+export MOONCAKE_STRICT_RACK=true</code></pre>
+      <p style="font-size:14.5px; color:var(--ink-soft); margin-top:12px">
+        语义：master <strong>只</strong>在 rack0 的 store server 上分配副本。
+        rack0 不足时触发淘汰并返回 <code>NO_AVAILABLE_HANDLE</code>，不会写到 rack1–3。
+      </p>
+      <div class="warn" style="margin-top:14px">
+        <p>
+          <strong>副本数约束：</strong><code>strict_rack=true</code> 时
+          <code>replica_num</code> 不能超过本机架可服务 segment 数（这里是 18），
+          否则分配必然失败。
+        </p>
+      </div>
+    </div>
+
+    <hr>
+
+    <div>
+      <h3><span class="pill rd">decode</span> &nbsp;读取侧，不开 strict</h3>
+      <pre><code>export MOONCAKE_RACK_ID=rack0        # 按所在机架
+export MOONCAKE_STRICT_RACK=false    # 或干脆不设</code></pre>
+      <p style="font-size:14.5px; color:var(--ink-soft); margin-top:12px">
+        <strong>decode 不要开 strict。</strong>strict 只影响写入放置，
+        在 decode 上开它没有收益，而且当 decode 自身也做写入时
+        （例如 chunked prefill 回填）会意外限制放置。
+      </p>
+    </div>
+  </div>
+
+  <h3 style="margin-top:32px">三个角色的环境变量对照</h3>
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr><th>变量</th><th>store server</th><th>prefill</th><th>decode</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>MOONCAKE_RACK_ID</code></td><td>必须</td><td>必须</td><td>必须</td></tr>
+        <tr><td><code>MOONCAKE_STRICT_RACK</code></td><td>不设</td><td><code>true</code></td><td><code>false</code> / 不设</td></tr>
+        <tr><td><code>MOONCAKE_MASTER</code></td><td>必须</td><td>必须</td><td>必须</td></tr>
+        <tr><td><code>MOONCAKE_TE_META_DATA_SERVER</code></td><td><code>P2PHANDSHAKE</code></td><td>同</td><td>同</td></tr>
+        <tr><td><code>MOONCAKE_PROTOCOL</code></td><td><code>rdma</code></td><td>同</td><td>同</td></tr>
+        <tr><td><code>MOONCAKE_DEVICE</code></td><td><code>mlx5_0</code></td><td>同</td><td>同</td></tr>
+        <tr><td><code>MOONCAKE_GLOBAL_SEGMENT_SIZE</code></td><td>按机器</td><td><strong>0 或不设</strong></td><td><strong>0 或不设</strong></td></tr>
+        <tr><td><code>MOONCAKE_LOCAL_BUFFER_SIZE</code></td><td><code>2gb</code></td><td>按并发</td><td>按并发</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3 style="margin-top:30px">rack_id 划分</h3>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>机架</th><th><code>rack_id</code></th><th>节点</th></tr></thead>
+      <tbody>
+        <tr><td>NVL72 #0</td><td><code>rack0</code></td><td>node-r0-01 … node-r0-18</td></tr>
+        <tr><td>NVL72 #1</td><td><code>rack1</code></td><td>node-r1-01 … node-r1-18</td></tr>
+        <tr><td>NVL72 #2</td><td><code>rack2</code></td><td>node-r2-01 … node-r2-18</td></tr>
+        <tr><td>NVL72 #3</td><td><code>rack3</code></td><td>node-r3-01 … node-r3-18</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p style="font-size:14px; color:var(--ink-faint); margin-top:10px">
+    同机架 18 台的 <code>rack_id</code> 必须完全相同，4 个机架互不相同。
+    <code>rack_id</code> 必须在 mount segment <strong>之前</strong>设好——
+    <code>SetRackAffinity()</code> 在建 client 之后、mount 之前调用。
+  </p>
+</section>
+
+<section>
+  <div class="section-head">
+    <div class="eyebrow">06</div>
+    <h2>不要设的环境变量</h2>
+    <p>这四个每一个都会让方案静默失效或直接不可用。</p>
+  </div>
+
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>变量</th><th>后果</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>MC_STORE_USE_HUGEPAGE</code></td>
+          <td>
+            <strong>存在即生效</strong>（设 <code>0</code> 也算开）。
+            分配在到达 VRAM 路径前被 hugepage 截走，fabric 开关等于没开
+          </td>
+        </tr>
+        <tr>
+          <td><code>MC_USE_NVLINK_IPC</code></td>
+          <td><code>supportFabricMem()</code> 直接 <code>return false</code>，静默回落 <code>cudaMalloc</code></td>
+        </tr>
+        <tr>
+          <td><code>MC_FORCE_MNNVL</code></td>
+          <td><strong>会让该节点彻底没有 RDMA</strong>，见下方死结</td>
+        </tr>
+        <tr>
+          <td><code>MC_INTRANODE_NVLINK</code></td>
+          <td>只装 <code>nvlink_intra</code>（单机 CUDA IPC），跨机完全不通</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3 style="margin-top:28px">MC_FORCE_MNNVL 的死结</h3>
+  <figure>
+    <svg viewBox="0 0 1000 230" role="img" aria-label="transport 安装是互斥的三分支 if else：设了 MC_INTRANODE_NVLINK 只装 nvlink_intra；否则设了 force_mnnvl 或无 HCA 只装 nvlink 且没有 rdma；否则只装 rdma。因此不设则 NVLink 进不了数据路径，设了则跨机架没有回落">
+      <defs>
+        <marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+        </marker>
+        <marker id="arno3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--alarm)"/>
+        </marker>
+      </defs>
+      <text x="24" y="28" font-size="12.5" font-weight="600" fill="currentColor">transfer_engine_impl.cpp:411-455 · 互斥 if/else</text>
+
+      <rect x="24" y="44" width="300" height="42" fill="none" stroke="currentColor" stroke-width="1.2"/>
+      <text x="38" y="61" font-size="10.5" font-family="monospace" fill="currentColor">MC_INTRANODE_NVLINK 设了</text>
+      <text x="38" y="78" font-size="10.5" fill="currentColor" opacity="0.75">→ 只装 nvlink_intra（单机）</text>
+
+      <rect x="24" y="94" width="300" height="42" fill="var(--alarm-wash)" stroke="var(--alarm)" stroke-width="1.4"/>
+      <text x="38" y="111" font-size="10.5" font-family="monospace" fill="currentColor">否则 force_mnnvl 或 (无 HCA)</text>
+      <text x="38" y="128" font-size="10.5" font-weight="600" fill="var(--alarm)">→ 只装 nvlink，没有 rdma</text>
+
+      <rect x="24" y="144" width="300" height="42" fill="var(--ok-wash)" stroke="var(--ok)" stroke-width="1.2"/>
+      <text x="38" y="161" font-size="10.5" font-family="monospace" fill="currentColor">否则</text>
+      <text x="38" y="178" font-size="10.5" fill="var(--ok)">→ 只装 rdma（GB300 默认走这条）</text>
+
+      <!-- consequences -->
+      <path d="M 324 165 L 380 165" stroke="currentColor" stroke-width="1.3" marker-end="url(#ar3)" fill="none"/>
+      <rect x="386" y="138" width="270" height="54" fill="none" stroke="currentColor" stroke-width="1.2"/>
+      <text x="400" y="158" font-size="11" font-weight="600" fill="currentColor">不设 MC_FORCE_MNNVL</text>
+      <text x="400" y="176" font-size="10.5" fill="currentColor" opacity="0.8">NVLink 压根没进数据路径</text>
+
+      <path d="M 324 115 L 380 115" stroke="var(--alarm)" stroke-width="1.3" marker-end="url(#arno3)" color="var(--alarm)" fill="none"/>
+      <rect x="386" y="88" width="270" height="54" fill="none" stroke="var(--alarm)" stroke-width="1.2"/>
+      <text x="400" y="108" font-size="11" font-weight="600" fill="var(--alarm)">设了 MC_FORCE_MNNVL</text>
+      <text x="400" y="126" font-size="10.5" fill="currentColor" opacity="0.8">跨机架读直接失败，无回落</text>
+
+      <rect x="690" y="88" width="286" height="104" fill="var(--surface-sunk)" stroke="currentColor" stroke-width="1"/>
+      <text x="706" y="110" font-size="11.5" font-weight="600" fill="currentColor">结论</text>
+      <text x="706" y="130" font-size="10.5" fill="currentColor">NVLink 进跨机架数据路径，在</text>
+      <text x="706" y="147" font-size="10.5" fill="currentColor">「双 transport 并存」落地前</text>
+      <text x="706" y="164" font-size="10.5" font-weight="600" fill="var(--alarm)">没有可用配置。</text>
+      <text x="706" y="182" font-size="10.5" fill="currentColor" opacity="0.8">生产 protocol 一律填 rdma。</text>
+    </svg>
+    <figcaption>
+      GB300 带 ConnectX-8，一定检测到 HCA，所以默认走第三条分支只装 <code>rdma</code>。
+      文档说要用 MNNVL 必须设 <code>MC_FORCE_MNNVL=true</code>，
+      但那会走到第二条分支——只有 nvlink，一个 rdma transport 都没有。
+    </figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="section-head">
+    <div class="eyebrow">07</div>
+    <h2>上线验证</h2>
+  </div>
+
+  <div class="stack">
+    <div>
+      <h3>机架感知是否生效</h3>
+      <p style="font-size:14.5px; color:var(--ink-soft); margin:0 0 12px">
+        master 开 <code>--v=1</code>，看放置决策日志：
+      </p>
+      <pre><code># strict 模式
+key=..., rack_id=rack0, strict_rack_excluded=54, rack_serving_segments=18
+# soft 模式
+key=..., rack_id=rack0, rack_preferred_segments=18</code></pre>
+      <p style="font-size:14.5px; color:var(--ink-soft); margin-top:12px">
+        <code>54</code> = 72 节点里排除的非本机架 segment，<code>18</code> = 本机架的。
+        <strong>这两个数字对不上，说明 rack_id 划分与实际拓扑不一致。</strong>
+      </p>
+    </div>
+
+    <div class="warn">
+      <p><strong>整套机制最危险的日志</strong>（来自 <code>NvlinkTransport::registerLocalMemory</code>）：</p>
+      <p><code>Memory region 0x... is not allocated by cuMemCreate, but it can be used as local buffer</code></p>
+      <p>
+        出现它时 <code>registerLocalMemory</code> 会 <code>return 0</code>——
+        注册「成功」但实际什么都没注册。mount 不报错、启动看起来正常，
+        但这块 buffer 根本没进 fabric，远端永远拿不到数据。
+        <strong>只能靠这条日志发现，部署后务必 grep 一次。</strong>
+      </p>
+    </div>
+
+    <div>
+      <h3>真机（NVL72）必须确认</h3>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>项</th><th>不满足的后果</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>CU_DEVICE_ATTRIBUTE_HANDLE_TYPE_FABRIC_SUPPORTED</code> 在全部 GPU 上为真</td>
+              <td><code>supportFabricMem()</code> 返回 false，静默回落 <code>cudaMalloc</code></td>
+            </tr>
+            <tr>
+              <td>IMEX domain 覆盖整个 NVL72 的 18 个节点，且与 <code>rack_id</code> 一致</td>
+              <td>fabric 分配失败或跨节点不可达</td>
+            </tr>
+            <tr>
+              <td>容器已透传 IMEX channel 设备节点</td>
+              <td><code>cuMemCreate</code> 的 fabric 分配失败</td>
+            </tr>
+            <tr>
+              <td><code>cuMemGetAllocationGranularity</code> 的实际取值</td>
+              <td>代码按 <code>max(granularity, 16MB)</code> 对齐；granularity 远大于 16 MB 时实际映射量会超过配置的 <code>global_segment_size</code>，需留余量</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="font-size:14px; color:var(--ink-faint); margin-top:12px">
+        IMEX 设备路径 <code>/dev/nvidia-caps-imex-channels</code> 是按 NVIDIA 驱动惯例给的，
+        <strong>未在真机核对</strong>。上机前先 <code>ls</code> 确认。
+      </p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="section-head">
+    <div class="eyebrow">08</div>
+    <h2>当前能力边界</h2>
+    <p>明确列出还没做的部分，避免误判能力。</p>
+  </div>
+
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>项</th><th>状态</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>机架感知放置（master strict/soft + reader 同机架优先）</td>
+          <td><span class="pill ok">已实现</span> 可直接上线</td>
+        </tr>
+        <tr>
+          <td>segment 导出 fabric handle（分配 / 释放 / 对齐）</td>
+          <td><span class="pill ok">已实现</span> 带开关，仅隔离节点验证</td>
+        </tr>
+        <tr>
+          <td><code>protocol_priority()</code> 加入 <code>nvlink</code> 条目</td>
+          <td><span class="pill no">未实现</span> nvlink 落到 0，rdma 是 2，永远选不到</td>
+        </tr>
+        <tr>
+          <td>nvlink 的机架可达性门控</td>
+          <td><span class="pill no">未实现</span> 跨机架会误选 NVLink 且不回落</td>
+        </tr>
+        <tr>
+          <td>双 transport 并存（<code>"nvlink,rdma"</code>）</td>
+          <td><span class="pill no">未实现</span> 当前安装是互斥 if/else</td>
+        </tr>
+        <tr>
+          <td>host DRAM 走 EGM</td>
+          <td><span class="pill no">未实现</span></td>
+        </tr>
+        <tr>
+          <td>本地 NOF_SSD vs 同机架 MEMORY 优先级</td>
+          <td><span class="pill no">待决策</span> 当前 SSD 优先，GB300 上可能不合理</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note" style="margin-top:20px">
+    <p>
+      <strong>机架感知放置可以上线并立即获益。</strong>
+      即使完全不启用 NVLink，把写入锁在同机架内也值得做——
+      同机架 RDMA 通常只经过一级 leaf 交换机，避免了 spine 跳数和跨机架拥塞。
+      fabric handle 仅限单机架隔离验证。
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="section-head">
+    <div class="eyebrow">09</div>
+    <h2>本目录的文件</h2>
+  </div>
+  <div class="files">
+    <div class="file">
+      <div class="fn">build.md</div>
+      <p>三个组件的构建，容器与 wheel 两条路</p>
+    </div>
+    <div class="file">
+      <div class="fn">config.md</div>
+      <p>NVL72 每个组件的完整可抄配置</p>
+    </div>
+    <div class="file">
+      <div class="fn">mooncake-rack.Dockerfile</div>
+      <p>带两个 GPU 开关的镜像定义</p>
+    </div>
+    <div class="file">
+      <div class="fn">20260918.md</div>
+      <p>方案设计与可行性分析</p>
+    </div>
+    <div class="file">
+      <div class="fn">20260918.html</div>
+      <p>方案论证的图示版</p>
+    </div>
+    <div class="file">
+      <div class="fn">20260918-deploy.md</div>
+      <p>部署手册（编译 / 拓扑 / 配置 / 验证）</p>
+    </div>
+  </div>
+</section>
+
+</div>

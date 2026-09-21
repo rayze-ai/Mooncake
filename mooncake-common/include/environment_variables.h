@@ -73,6 +73,13 @@ struct ClientNumaEnvironmentVariables {
     MC_DEFINE_ENV_VAR(std::string, MC_STORE_NUMA_SOCKET_ID);
 };
 
+struct VramFabricEnvironmentVariables {
+    // Keep the raw string so an invalid value can be reported verbatim and
+    // still leave the feature disabled, rather than silently enabling a
+    // fabric allocation the driver may not support.
+    MC_DEFINE_ENV_VAR(std::string, MC_STORE_VRAM_FABRIC);
+};
+
 struct RegisteredPinnedMemoryEnvironmentVariables {
     // Keep the raw string because the legacy parser rejects a leading '+',
     // unlike the shared typed integer parser.

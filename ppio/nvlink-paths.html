@@ -1,0 +1,845 @@
+<title>KV 走 NVLink 的四个判据</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chivo:wght@400;700;900&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;700&display=swap">
+<style>
+  :root {
+    --ground: #F7F8F9;
+    --surface: #FFFFFF;
+    --surface-2: #EDEFF2;
+    --ink: #151C24;
+    --ink-2: #4A5866;
+    --ink-3: #75828F;
+    --rule: #D3D9DF;
+    --nvlink: #4C7A16;
+    --nvlink-bg: #ECF3E0;
+    --rdma: #2F5F7D;
+    --rdma-bg: #E3ECF2;
+    --blocked: #983C28;
+    --blocked-bg: #F7E6E1;
+    --accent: #4C7A16;
+    --mono: "JetBrains Mono", ui-monospace, monospace;
+    --display: "Chivo", system-ui, sans-serif;
+    --body: "Source Sans 3", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0F1620;
+      --surface: #18212C;
+      --surface-2: #212C39;
+      --ink: #EDF1F5;
+      --ink-2: #A8B4C0;
+      --ink-3: #7D8B99;
+      --rule: #2E3B4A;
+      --nvlink: #8CBF3F;
+      --nvlink-bg: #1E2A16;
+      --rdma: #6BA3C7;
+      --rdma-bg: #16242E;
+      --blocked: #D4735A;
+      --blocked-bg: #2B1712;
+      --accent: #8CBF3F;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0F1620;
+    --surface: #18212C;
+    --surface-2: #212C39;
+    --ink: #EDF1F5;
+    --ink-2: #A8B4C0;
+    --ink-3: #7D8B99;
+    --rule: #2E3B4A;
+    --nvlink: #8CBF3F;
+    --nvlink-bg: #1E2A16;
+    --rdma: #6BA3C7;
+    --rdma-bg: #16242E;
+    --blocked: #D4735A;
+    --blocked-bg: #2B1712;
+    --accent: #8CBF3F;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 17px;
+    line-height: 1.65;
+  }
+  .wrap { max-width: 1140px; margin: 0 auto; padding: 0 28px 100px; }
+
+  header { padding: 72px 0 44px; border-bottom: 3px solid var(--ink); }
+  .eyebrow {
+    font-family: var(--mono); font-size: 12px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--ink-3); margin-bottom: 18px;
+  }
+  h1 {
+    font-family: var(--display); font-weight: 900; font-size: clamp(34px, 5.5vw, 58px);
+    line-height: 1.02; margin: 0 0 22px; text-wrap: balance; letter-spacing: -.02em;
+  }
+  .standfirst {
+    font-size: 20px; color: var(--ink-2); max-width: 62ch; margin: 0;
+  }
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+
+  h2 {
+    font-family: var(--display); font-weight: 700; font-size: 27px;
+    margin: 0 0 6px; letter-spacing: -.01em; text-wrap: balance;
+  }
+  h3 {
+    font-family: var(--display); font-weight: 700; font-size: 19px;
+    margin: 0 0 10px;
+  }
+  section { padding-top: 60px; }
+  .qmark {
+    font-family: var(--mono); font-size: 12px; color: var(--accent);
+    letter-spacing: .1em; text-transform: uppercase; margin-bottom: 10px;
+  }
+  .lede { color: var(--ink-2); max-width: 66ch; margin: 0 0 28px; }
+  p { max-width: 66ch; }
+  code {
+    font-family: var(--mono); font-size: .87em;
+    background: var(--surface-2); padding: 1px 5px; border-radius: 3px;
+  }
+
+  /* ---- criterion decision chain ---- */
+  .chain { display: flex; flex-direction: column; gap: 0; margin: 30px 0 10px; }
+  .step {
+    display: grid; grid-template-columns: 42px 1fr; gap: 20px;
+    padding: 22px 0; border-top: 1px solid var(--rule);
+  }
+  .step:last-child { border-bottom: 1px solid var(--rule); }
+  .step-n {
+    font-family: var(--mono); font-weight: 700; font-size: 13px;
+    color: var(--surface); background: var(--ink);
+    width: 30px; height: 30px; display: grid; place-items: center;
+    border-radius: 50%; margin-top: 2px;
+  }
+  .step-q { font-family: var(--display); font-weight: 700; font-size: 18px; margin-bottom: 6px; }
+  .step-body { color: var(--ink-2); font-size: 15.5px; }
+  .verdicts { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+  .verdict {
+    font-family: var(--mono); font-size: 12px; padding: 5px 10px; border-radius: 3px;
+    border: 1px solid transparent;
+  }
+  .v-yes { background: var(--nvlink-bg); color: var(--nvlink); border-color: var(--nvlink); }
+  .v-no  { background: var(--blocked-bg); color: var(--blocked); border-color: var(--blocked); }
+  .v-mid { background: var(--rdma-bg); color: var(--rdma); border-color: var(--rdma); }
+
+  /* ---- rack / node / memory nesting ---- */
+  .topo { margin: 28px 0; overflow-x: auto; }
+  .rack {
+    border: 2px dashed var(--nvlink); border-radius: 8px; padding: 16px;
+    background: var(--nvlink-bg);
+  }
+  .rack.remote { border-color: var(--ink-3); background: var(--surface-2); }
+  .rack-label {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--nvlink); margin-bottom: 14px; font-weight: 700;
+  }
+  .rack.remote .rack-label { color: var(--ink-3); }
+  .nodes { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
+  .node {
+    background: var(--surface); border: 1px solid var(--rule);
+    border-radius: 6px; padding: 14px;
+  }
+  .node-name {
+    font-family: var(--display); font-weight: 700; font-size: 14px; margin-bottom: 4px;
+  }
+  .node-sub { font-family: var(--mono); font-size: 11px; color: var(--ink-3); margin-bottom: 12px; }
+  .mem {
+    border-radius: 4px; padding: 9px 11px; margin-bottom: 7px;
+    font-size: 13px; line-height: 1.4; border: 1px solid var(--rule);
+    background: var(--surface-2);
+  }
+  .mem-k { font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); display: block; margin-bottom: 2px; }
+  .mem.exported { border-color: var(--nvlink); background: var(--nvlink-bg); }
+  .mem.exported .mem-k { color: var(--nvlink); }
+  .mem.plain { border-style: dashed; }
+  .tag {
+    display: inline-block; font-family: var(--mono); font-size: 10px;
+    padding: 2px 6px; border-radius: 3px; margin-top: 5px; font-weight: 700;
+  }
+  .tag-ok { background: var(--nvlink); color: var(--surface); }
+  .tag-no { background: var(--blocked); color: var(--surface); }
+
+  .flow { display: flex; flex-direction: column; gap: 2px; margin: 22px 0; }
+  .hop {
+    display: grid; grid-template-columns: 28px 1fr; gap: 16px; align-items: start;
+    padding: 13px 16px; border-left: 3px solid var(--rule); background: var(--surface);
+  }
+  .hop.nv { border-left-color: var(--nvlink); }
+  .hop.rd { border-left-color: var(--rdma); }
+  .hop.bad { border-left-color: var(--blocked); }
+  .hop-n { font-family: var(--mono); font-size: 12px; color: var(--ink-3); font-weight: 700; padding-top: 2px; }
+  .hop-t { font-size: 15px; }
+  .hop-t b { font-family: var(--display); }
+  .hop-t .where { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); display: block; margin-top: 3px; }
+
+  table { border-collapse: collapse; width: 100%; margin: 22px 0; font-size: 15px; }
+  th, td { text-align: left; padding: 11px 13px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--ink-3); border-bottom: 2px solid var(--ink);
+  }
+  td code { font-size: .84em; }
+  .wide { overflow-x: auto; }
+
+  .callout {
+    border-left: 4px solid var(--accent); background: var(--surface);
+    padding: 18px 22px; margin: 26px 0; border-radius: 0 5px 5px 0;
+  }
+  .callout.warn { border-left-color: var(--blocked); }
+  .callout h3 { margin-bottom: 6px; }
+  .callout p { margin: 0; font-size: 15.5px; color: var(--ink-2); }
+  .callout p + p { margin-top: 10px; }
+
+  .status {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--mono); font-size: 11px; font-weight: 700;
+    padding: 3px 9px; border-radius: 3px;
+  }
+  .s-done { background: var(--nvlink-bg); color: var(--nvlink); }
+  .s-miss { background: var(--blocked-bg); color: var(--blocked); }
+
+  /* ---- stacked layer diagram ---- */
+  .layers { display: flex; flex-direction: column; gap: 0; margin: 30px 0 28px; }
+  .layer {
+    border: 1px solid var(--rule); border-radius: 6px;
+    padding: 16px 18px; background: var(--surface);
+  }
+  .layer.imex { border-color: var(--nvlink); border-width: 2px; background: var(--nvlink-bg); }
+  .layer.hw { background: var(--surface-2); }
+  .layer-k {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--ink-3); font-weight: 700; margin-bottom: 12px;
+  }
+  .layer.imex .layer-k { color: var(--nvlink); }
+  .layer-items { display: flex; flex-wrap: wrap; gap: 9px; }
+  .chip {
+    font-size: 13.5px; line-height: 1.35; padding: 8px 12px;
+    border: 1px solid var(--rule); border-radius: 4px; background: var(--ground);
+  }
+  .chip small { color: var(--ink-3); font-size: 11.5px; }
+  .chip code { background: none; padding: 0; font-size: .92em; }
+  .layer-note { font-size: 13.5px; color: var(--ink-2); margin-top: 11px; }
+  .layer-arrow {
+    font-family: var(--mono); font-size: 12px; color: var(--ink-3);
+    padding: 7px 0 7px 18px;
+  }
+
+  hr.big { border: none; border-top: 3px solid var(--ink); margin: 58px 0 0; }
+  footer { padding-top: 26px; color: var(--ink-3); font-size: 14px; }
+</style>
+
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">Mooncake · 机架感知 / NVLink 评审附图</div>
+  <h1>KV 走 NVLink 的四个判据</h1>
+  <p class="standfirst">
+    判据不是「显存还是 DRAM」，而是<strong>这块内存有没有被 VMM 分配并导出到 fabric 地址空间</strong>。
+    下面按你的四个问题逐层拆开：谁需要 fabric 分配、DRAM 能不能走、写路径怎么走、读路径怎么走。
+  </p>
+</header>
+
+<section>
+  <div class="qmark">判据</div>
+  <h2>能不能走 NVLink，只看两件事</h2>
+  <p class="lede">顺序固定，第一问不过就没有第二问。注意两问里都<b>没有出现「显存还是 DRAM」</b>。</p>
+
+  <div class="chain">
+    <div class="step">
+      <div class="step-n">1</div>
+      <div>
+        <div class="step-q">源和目标在同一个 NVLink domain 吗？</div>
+        <div class="step-body">
+          NVL72 一个机架 = 一个 NVLink domain = 一个 IMEX domain（18 节点 / 72 GPU）。
+          这是物理边界，软件绕不过去。
+        </div>
+        <div class="verdicts">
+          <span class="verdict v-yes">同 domain → 进入第 2 问</span>
+          <span class="verdict v-no">跨 domain → 只能 RDMA / RoCE，无第二选择</span>
+        </div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-n">2</div>
+      <div>
+        <div class="step-q">这块内存导出到 fabric 了吗？</div>
+        <div class="step-body">
+          要求是 <code>cuMemCreate</code> + <code>CU_MEM_HANDLE_TYPE_FABRIC</code> 的 VMM 分配。
+          远端要访问，需要稳定物理后备、进 fabric 可见页表、拿到可导入的句柄。
+        </div>
+        <div class="verdicts">
+          <span class="verdict v-yes">已导出 → NVLink</span>
+          <span class="verdict v-mid">未导出 → RDMA</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="wide">
+  <table>
+    <thead><tr><th>内存来源</th><th>能否导出 fabric handle</th><th>为什么</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>aligned_alloc</code> / numa / hugepage mmap<br><span style="font-size:13px;color:var(--ink-3)">Store 今天的默认路径</span></td>
+        <td><span class="status s-miss">不能</span></td>
+        <td>不是 VMM 分配，<code>cuMemRetainAllocationHandle</code> 认不出来</td>
+      </tr>
+      <tr>
+        <td><code>cudaHostRegister</code> 的 pinned DRAM</td>
+        <td><span class="status s-miss">不能</span></td>
+        <td>pin 服务的是 DMA 引擎，跟 fabric 导出是两条正交的事</td>
+      </tr>
+      <tr>
+        <td><code>cudaMalloc</code> 的显存</td>
+        <td><span class="status s-miss">不能</span></td>
+        <td><b>显存也不行。</b>判据是分配方式，不是内存位置</td>
+      </tr>
+      <tr>
+        <td><code>cuMemCreate</code> + <code>HANDLE_TYPE_FABRIC</code><br>location = <code>DEVICE</code></td>
+        <td><span class="status s-done">能</span></td>
+        <td>显存走 fabric 的正路，本分支已实现</td>
+      </tr>
+      <tr>
+        <td><code>cuMemCreate</code> + <code>HANDLE_TYPE_FABRIC</code><br>location = <code>HOST_NUMA</code>（EGM）</td>
+        <td><span class="status s-done">能</span></td>
+        <td>host DRAM 走 fabric 的正路，见下一节</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout">
+    <h3>所以「Mooncake 用 pinned DRAM 所以用不了 NVLink」</h3>
+    <p>
+      <b>结论在今天的默认配置下是对的，但判据是错的。</b>
+      走不通的原因不是「它用 DRAM」，而是「它的分配器没走 VMM fabric 路径」。
+      判据错会导致后续决策跑偏——比如以为「把数据搬到显存就能走 NVLink」，实际上
+      <code>cudaMalloc</code> 的显存同样导不出去。
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="qmark">问题 2</div>
+  <h2>DRAM 能走 NVLink 吗？能，但要两个条件同时成立</h2>
+  <p class="lede">
+    NVLink 是<b>内存语义</b>互连，传的是 load / store / atomic，跑在一个物理地址空间上。
+    链路本身不关心目标物理页是 HBM 还是 DRAM。
+  </p>
+
+  <div class="wide">
+  <table>
+    <thead><tr><th>条件</th><th>x86 + PCIe 挂 GPU（传统 HGX）</th><th>Grace-Blackwell（NVLink-C2C）</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>条件一</b><br>host DRAM 物理上在 NVLink fabric 上吗</td>
+        <td><span class="status s-miss">否</span><br><span style="font-size:14px;color:var(--ink-2)">NVLink 只连 GPU↔GPU，DRAM 在 PCIe / DDR 一侧，fabric 里根本不存在这条边</span></td>
+        <td><span class="status s-done">是</span><br><span style="font-size:14px;color:var(--ink-2)">LPDDR 被拉进 GPU 可寻址的相干地址空间</span></td>
+      </tr>
+      <tr>
+        <td><b>条件二</b><br>这块内存映射/导出到 fabric 了吗</td>
+        <td colspan="2"><span style="font-size:14px;color:var(--ink-2)">两种形态都要满足。有资格 ≠ 可达：需要 <code>CU_MEM_LOCATION_TYPE_HOST_NUMA</code> 的 fabric 分配，也就是 <b>EGM</b></span></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>
+    这跟 CPU 指令集无关。反例是 POWER9 + Volta（IBM AC922），CPU↔GPU 之间就是 NVLink 2.0。
+    真正的判据是<b>「CPU 侧有没有实现一条与 GPU 相干的 NVLink 级端口」</b>——Intel / AMD 没有，Grace 有。
+  </p>
+
+  <div class="callout">
+    <h3>EGM 在 TENT 里已经实现了</h3>
+    <p>
+      <code>mnnvl_transport.cpp:70</code> 的 <code>buildEgmAllocationProp()</code>，
+      <code>prop.location.type = CU_MEM_LOCATION_TYPE_HOST_NUMA</code>。
+      它的注释直接点名了这个场景：host-resident 数据（例如 CPU 侧的 KV cache）
+      「moves over NVLink instead of the NIC」。
+    </p>
+    <p>
+      但 Store 没接这条路。classic <code>nvlink_transport</code> 里 <code>HOST_NUMA</code> 出现
+      <b>0 次</b>，三处 <code>CU_MEM_LOCATION_TYPE</code> 全是 <code>DEVICE</code>
+      （<code>:1128, :1232, :1294</code>）。
+    </p>
+  </div>
+
+  <div class="callout">
+    <h3>带宽序关系：通了也不等于满速</h3>
+    <p>
+      DRAM-over-NVLink ≠ HBM-over-NVLink。瓶颈在网关之后：
+      远端 GPU → NVSwitch → 目标节点 GPU → C2C → Grace → LPDDR。
+    </p>
+    <p style="font-family:var(--mono);font-size:13.5px;color:var(--ink)">
+      本地 HBM &gt; HBM over NVLink &gt; DRAM over NVLink &gt;&gt; DRAM over RDMA
+    </p>
+    <p>
+      关键是最后那个 <code>&gt;&gt;</code>：DRAM-over-NVLink 拿不到满带宽，
+      但相对跨机架 RDMA 仍有接近一个数量级的收益。
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="qmark">问题 3</div>
+  <h2>P 写 KV：谁需要 fabric 分配</h2>
+  <p class="lede">
+    先纠一个容易搞反的点：<b>需要 fabric 分配的不是 P 自己的 buffer，而是被访问的那一侧——
+    Store segment 的内存。</b>
+    P 读自己的本地 buffer 不需要跨节点句柄；要跨节点被访问的是目标。
+  </p>
+
+  <div class="topo">
+    <div class="rack">
+      <div class="rack-label">▸ Rack 0 — 一个 NVLink domain / 一个 IMEX domain（18 节点 72 GPU）</div>
+      <div class="nodes">
+        <div class="node">
+          <div class="node-name">节点 A ─ Prefill (P)</div>
+          <div class="node-sub">source side</div>
+          <div class="mem plain">
+            <span class="mem-k">P 的 KV buffer</span>
+            本地读即可，无需导出
+          </div>
+        </div>
+        <div class="node">
+          <div class="node-name">节点 B ─ Store server</div>
+          <div class="node-sub">target side · master 选中</div>
+          <div class="mem exported">
+            <span class="mem-k">segment 内存 · VMM fabric</span>
+            <code>cuMemCreate</code> + <code>FABRIC</code>
+            <span class="tag tag-ok">可被跨节点导入</span>
+          </div>
+          <div class="mem plain">
+            <span class="mem-k">segment 内存 · aligned_alloc</span>
+            今天的默认
+            <span class="tag tag-no">导不出，只能 RDMA</span>
+          </div>
+        </div>
+        <div class="node">
+          <div class="node-name">节点 C ─ Store server</div>
+          <div class="node-sub">同 rack 的另一个候选</div>
+          <div class="mem exported">
+            <span class="mem-k">segment 内存 · VMM fabric</span>
+            同 domain 内一样可达
+            <span class="tag tag-ok">NVLink</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <h3>「同机架」就够，不需要「同机器」</h3>
+    <p>
+      MNNVL 的 fabric handle 本来就是为<b>跨节点导入</b>设计的，同机架不同节点照样走 NVLink。
+      要求「同机器」会把可用范围从 18 台压到 1 台。
+    </p>
+    <p>
+      只有 <code>nvlink_intra</code> 协议才需要同机器——它靠 <code>cudaIpcGetMemHandle</code>，
+      跟 fabric handle 是<b>两套独立机制</b>。这是两个不该混淆的东西。
+    </p>
+  </div>
+
+  <h3 style="margin-top:38px">写路径逐跳</h3>
+  <div class="flow">
+    <div class="hop"><div class="hop-n">1</div><div class="hop-t">
+      <b>P 调 Put</b>，带上自己的 <code>rack_id</code> 与 <code>strict_rack</code>
+      <span class="where">client_service.cpp · AttachLocalityHints</span>
+    </div></div>
+    <div class="hop nv"><div class="hop-n">2</div><div class="hop-t">
+      <b>master 按机架筛候选</b>：strict 模式下只有本机架 segment 能服务，放不下就
+      <code>NO_AVAILABLE_HANDLE</code> + 触发淘汰，<b>不溢出到别的机架</b>
+      <span class="where">master_service.cpp:4633 · GetRackSegmentNames ✅ 已实现</span>
+    </div></div>
+    <div class="hop nv"><div class="hop-n">3</div><div class="hop-t">
+      <b>目标 segment 的内存已是 fabric 分配</b>，注册时导出 handle
+      <span class="where">nvlink_transport.cpp:1020 · cuMemExportToShareableHandle ✅ 已实现</span>
+    </div></div>
+    <div class="hop bad"><div class="hop-n">4</div><div class="hop-t">
+      <b>TE 选传输 ← 断在这里。</b><code>protocol_priority()</code> 没有 nvlink 分支，
+      落到 <code>0</code>；<code>rdma</code> 是 <code>2</code>。<b>NVLink 永远选不中，
+      导出成功了也照样走 RDMA</b>
+      <span class="where">multi_transport.cpp:615-627 · ❌ 未实现</span>
+    </div></div>
+  </div>
+</section>
+
+<section>
+  <div class="qmark">问题 4</div>
+  <h2>D 拉取 KV：看副本落在哪，不看 P 在哪</h2>
+  <p class="lede">
+    再纠一个点：<b>严格说不存在「D 从 P 拉取」。</b>
+    KV 不在 P 上——P 把它写进了 Store segment，D 从<b>副本所在的 segment</b> 读。
+    只有 store server 与 P 同机部署时两者才等价。
+  </p>
+
+  <div class="topo">
+    <div class="rack" style="margin-bottom:14px">
+      <div class="rack-label">▸ Rack 0 — D 所在的 NVLink domain</div>
+      <div class="nodes">
+        <div class="node">
+          <div class="node-name">节点 D ─ Decode</div>
+          <div class="node-sub">reader · local_rack_id = rack0</div>
+          <div class="mem plain"><span class="mem-k">D 的接收 buffer</span>本地写入</div>
+        </div>
+        <div class="node" style="border-color:var(--nvlink);border-width:2px">
+          <div class="node-name">节点 B ─ 副本 ①</div>
+          <div class="node-sub">同 rack · segment 已导出</div>
+          <div class="mem exported">
+            <span class="mem-k">VMM fabric 显存</span>
+            <span class="tag tag-ok">→ NVLink</span>
+          </div>
+        </div>
+        <div class="node">
+          <div class="node-name">节点 C ─ 副本 ②</div>
+          <div class="node-sub">同 rack · 未导出</div>
+          <div class="mem plain">
+            <span class="mem-k">host DRAM · aligned_alloc</span>
+            <span class="tag tag-no">→ RDMA</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="rack remote">
+      <div class="rack-label">▸ Rack 1 — 另一个 NVLink domain（物理隔离）</div>
+      <div class="nodes">
+        <div class="node">
+          <div class="node-name">节点 E ─ 副本 ③</div>
+          <div class="node-sub">跨 rack</div>
+          <div class="mem plain">
+            <span class="mem-k">任意内存（导出与否都一样）</span>
+            <span class="tag tag-no">→ 只能 RDMA / RoCE</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="wide">
+  <table>
+    <thead><tr><th>副本位置</th><th>segment 内存</th><th>应走</th><th>现状</th></tr></thead>
+    <tbody>
+      <tr><td>同机架</td><td>VRAM + fabric 导出</td><td style="color:var(--nvlink);font-weight:600">NVLink</td><td>分配侧已实现，<b>选路层未实现</b></td></tr>
+      <tr><td>同机架</td><td>host DRAM（默认）</td><td style="color:var(--rdma);font-weight:600">RDMA</td><td>今天如此</td></tr>
+      <tr><td>同机架</td><td>host DRAM + EGM</td><td style="color:var(--nvlink);font-weight:600">NVLink</td><td>路线 B，未实现</td></tr>
+      <tr><td>跨机架</td><td>任意</td><td style="color:var(--rdma);font-weight:600">RDMA / RoCE</td><td>已实现（同机架优先 + 跨机架 fallback）</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3 style="margin-top:38px">读路径逐跳</h3>
+  <div class="flow">
+    <div class="hop"><div class="hop-n">1</div><div class="hop-t">
+      <b>D 调 Get</b>，master 返回该 key 的全部副本 descriptor
+    </div></div>
+    <div class="hop nv"><div class="hop-n">2</div><div class="hop-t">
+      <b>D 侧分层选副本</b>：local MEMORY &gt; local NOF_SSD &gt; <b>同机架 MEMORY</b> &gt; 远端 MEMORY &gt; …
+      <span class="where">replica_selection.h:146 · buf.rack_id() == local_rack_id ✅ 已实现</span>
+    </div></div>
+    <div class="hop bad"><div class="hop-n">3</div><div class="hop-t">
+      <b>TE 选传输 ← 同一个断点。</b>选中了同机架副本，但传输层依然挑不到 nvlink
+      <span class="where">multi_transport.cpp · ❌ 未实现</span>
+    </div></div>
+  </div>
+
+  <div class="callout warn">
+    <h3>跨 domain 的现状比「未实现」更糟</h3>
+    <p>
+      在 nvlink 协议下跨机架不是退化成 RDMA，而是<b>直接失败</b>。
+      transport 安装是排他 <code>if/else</code>（<code>transfer_engine_impl.cpp:410-454</code>），
+      设了 <code>MC_FORCE_MNNVL</code> 的节点<b>根本没装 rdma</b>，没有东西可回落。
+    </p>
+    <p>
+      <code>isLocalIpcReachableTarget()</code> 的门控名单只有 <code>hip</code> / <code>musa</code> /
+      <code>shm</code>，nvlink 不在里面，所以跨机架也不会被跳过。
+      <b>生产节点一律不要设 <code>MC_FORCE_MNNVL</code>。</b>
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="qmark">汇总</div>
+  <h2>四层里，哪层通了哪层没通</h2>
+
+  <div class="wide">
+  <table>
+    <thead><tr><th>层</th><th>职责</th><th>状态</th><th>证据</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>放置层</b><br>master 选点</td>
+        <td>strict / soft 机架亲和，选同机架 segment</td>
+        <td><span class="status s-done">已实现</span></td>
+        <td><code>master_service.cpp:4633</code></td>
+      </tr>
+      <tr>
+        <td><b>选副本层</b><br>reader 分层</td>
+        <td>同机架副本优先于任何远端副本</td>
+        <td><span class="status s-done">已实现</span></td>
+        <td><code>replica_selection.h:146</code></td>
+      </tr>
+      <tr>
+        <td><b>分配层</b><br>内存怎么来</td>
+        <td>显存走 VMM fabric 并导出 handle</td>
+        <td><span class="status s-done">已实现</span><br><span style="font-size:13px;color:var(--ink-3)">host DRAM（EGM）未接</span></td>
+        <td><code>nvlink_transport.cpp:1232</code></td>
+      </tr>
+      <tr style="background:var(--blocked-bg)">
+        <td><b>选路层</b><br>用哪个 transport</td>
+        <td>同 domain + 已导出 → 选 nvlink；否则 rdma</td>
+        <td><span class="status s-miss">未实现</span></td>
+        <td><code>multi_transport.cpp:615</code> 无 nvlink 分支</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout warn">
+    <h3>所以两条目标需求都还没达成</h3>
+    <p>
+      前三层都通了，但它们只决定「KV 落在同机架、并且那块内存有资格走 NVLink」。
+      <b>「有资格」和「真的会走」之间差的就是选路层，而选路层是零。</b>
+      fabric 导出成功了，数据照旧从 RDMA 走。
+    </p>
+  </div>
+
+  <p>
+    另外注意当前是<b>「分配层先于选路层落地」</b>：fabric 分配已实现、门控未实现。
+    所以 <code>MC_STORE_VRAM_FABRIC</code> 目前<b>只应在隔离节点上验证</b>，
+    不要在跨机架流量存在的生产环境打开。
+  </p>
+</section>
+
+<section>
+  <div class="qmark">追问 1</div>
+  <h2>IMEX 作用在哪一层</h2>
+  <p class="lede">
+    简短回答：<b>IMEX 在所有这些之下，是节点级的系统设施，不属于 TP／DP／KV 传输中的任何一层，
+    也不在 P 或 D 的内部。</b>Mooncake 启动时不需要、也无法「开启」它——它必须在 Mooncake
+    起来之前就已经由运维配好并运行。
+  </p>
+
+  <div class="layers">
+    <div class="layer app">
+      <div class="layer-k">应用层 · 各自独立</div>
+      <div class="layer-items">
+        <span class="chip">跨机 TP<br><small>NCCL / 通信库</small></span>
+        <span class="chip">跨机 DP / EP<br><small>NCCL / 通信库</small></span>
+        <span class="chip">Mooncake KV 传输<br><small>本文讨论的路径</small></span>
+      </div>
+      <div class="layer-note">三者都<b>各自</b>调 CUDA VMM API 申请 fabric 内存，互不知晓</div>
+    </div>
+    <div class="layer-arrow">↓ 都依赖同一套 fabric 能力</div>
+    <div class="layer cuda">
+      <div class="layer-k">CUDA 驱动层</div>
+      <div class="layer-items">
+        <span class="chip"><code>cuMemCreate</code> + <code>HANDLE_TYPE_FABRIC</code></span>
+        <span class="chip"><code>cuMemExportToShareableHandle</code></span>
+        <span class="chip"><code>cuMemImportFromShareableHandle</code></span>
+      </div>
+      <div class="layer-note">导出／导入跨节点句柄时，驱动会向 IMEX 请求授权</div>
+    </div>
+    <div class="layer-arrow">↓ 授权与通道由它提供</div>
+    <div class="layer imex">
+      <div class="layer-k">IMEX · 节点级守护进程（系统设施）</div>
+      <div class="layer-items">
+        <span class="chip"><code>nvidia-imex</code> daemon</span>
+        <span class="chip"><code>nodes_config.cfg</code><br><small>定义 domain 成员</small></span>
+        <span class="chip"><code>/dev/nvidia-caps-imex-channels/*</code></span>
+      </div>
+      <div class="layer-note">
+        一台机器<b>一个</b> IMEX 实例，为该节点上<b>所有</b>进程服务。
+        它划定的 domain 就是「哪些节点之间允许互相导入 fabric 句柄」
+      </div>
+    </div>
+    <div class="layer-arrow">↓ 物理承载</div>
+    <div class="layer hw">
+      <div class="layer-k">硬件</div>
+      <div class="layer-items"><span class="chip">NVSwitch / NVLink fabric（NVL72 = 18 节点 72 GPU）</span></div>
+    </div>
+  </div>
+
+  <div class="wide">
+  <table>
+    <thead><tr><th>问题</th><th>答案</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>作用于跨机 TP 还是跨机 DP？</td>
+        <td><b>两者都不是，也两者都是。</b>IMEX 不区分上层用途——它只管「这两个节点之间能不能导入 fabric 句柄」。跨机 TP、跨机 DP、Mooncake 的 KV 传输<b>共用同一个 IMEX domain</b>，不是各自一份。</td>
+      </tr>
+      <tr>
+        <td>在 P 或 D 的内部吗？</td>
+        <td><b>不在。</b>它是节点级守护进程，与推理进程平级且先于它存在。P 和 D 如果在同一个 NVL72 机架内，它们<b>共享</b>这个 domain。</td>
+      </tr>
+      <tr>
+        <td>Mooncake 启动时需要开启吗？</td>
+        <td><b>不需要，也开不了。</b>Mooncake 只是 <code>cuMemCreate</code> 的调用方。IMEX 没配好的表现是<b>分配／导出直接失败</b>，不是 Mooncake 少做了一步初始化。</td>
+      </tr>
+      <tr>
+        <td>那 Mooncake 侧要做什么？</td>
+        <td>三件事：① 打开 <code>MC_STORE_VRAM_FABRIC=1</code> 走 fabric 分配；② 容器部署时确保 <code>/dev/nvidia-caps-imex-channels</code> 设备节点<b>已透传进容器</b>；③ 保证 <code>MOONCAKE_RACK_ID</code> 的划分与 IMEX domain 边界<b>完全一致</b>。</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout warn">
+    <h3>第 ③ 条是新的风险点，因为门控已定为配置驱动</h3>
+    <p>
+      <code>rack_id</code> 是<b>手填的环境变量</b>，IMEX domain 是<b>运维配的系统设施</b>，
+      两者没有任何程序化关联——没有代码会去校验它们一致。
+    </p>
+    <p>
+      如果两个物理机架被填了同一个 <code>rack_id</code>，门控会判定「同 domain，可以走 NVLink」，
+      然后 fabric 句柄导入失败，而且<b>没有回落</b>。这正是决策 #2 选了配置驱动后
+      必须补「启动期一致性校验」的原因。
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="qmark">追问 2</div>
+  <h2>选路层为什么没实现</h2>
+  <p class="lede">
+    不是「忘了做」或「排期没到」。查过代码后，这里有<b>三个结构性障碍叠加</b>，
+    每一个单独都能让选路层无从下手。
+  </p>
+
+  <div class="chain">
+    <div class="step">
+      <div class="step-n">1</div>
+      <div>
+        <div class="step-q">装了 nvlink 就没有 rdma —— transport 安装是排他的</div>
+        <div class="step-body">
+          <code>transfer_engine_impl.cpp:405-454</code> 是一条
+          <code>if / else if / else</code> 链，<b>一次只装一个 transport</b>。
+          更关键的是它的条件：nvlink 只在
+          <code>force_gpu_p2p || (no_hca &amp;&amp; !force_hca)</code> 时才装——
+          也就是<b>「设了 <code>MC_FORCE_MNNVL</code>」或「压根检测不到 HCA」</b>。
+          有 RDMA 网卡的正常生产节点会走 <code>else if (!no_hca)</code> 装 rdma。
+        </div>
+        <div class="verdicts">
+          <span class="verdict v-no">有网卡的节点：只有 rdma，nvlink 没装，选路无从选择</span>
+          <span class="verdict v-no">设了 MC_FORCE_MNNVL：只有 nvlink，跨机架无 rdma 可回落</span>
+        </div>
+        <div class="step-body" style="margin-top:10px">
+          所以「选路」这个动作在今天的架构里<b>没有成立的前提</b>：
+          两个候选 transport 从来不同时存在。要做选路，得<b>先</b>让它们并存。
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-n">2</div>
+      <div>
+        <div class="step-q">那段 <code>protocol_priority()</code> 默认根本不编译</div>
+        <div class="step-body">
+          它整段在 <code>#ifdef ENABLE_MULTI_PROTOCOL</code> 里，而
+          <code>common.cmake:193</code> 的默认值是 <b>OFF</b>
+          （本次构建的 <code>CMakeCache.txt</code> 也确认 <code>ENABLE_MULTI_PROTOCOL:BOOL=OFF</code>）。
+          <code>BufferDesc::protocol</code> 这个字段本身也在同一个 <code>#ifdef</code> 之内。
+        </div>
+        <div class="verdicts">
+          <span class="verdict v-no">默认构建里：buffer 上没有 protocol 字段，也没有按 protocol 选路的代码</span>
+        </div>
+        <div class="step-body" style="margin-top:10px">
+          换句话说，「给 <code>protocol_priority()</code> 加一个 nvlink 分支」这个
+          最小改法，<b>在默认构建里改的是一段死代码</b>。得连带把
+          <code>ENABLE_MULTI_PROTOCOL</code> 打开、并把 segment 注册成多协议，
+          才轮得到选路逻辑生效。
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-n">3</div>
+      <div>
+        <div class="step-q">TE 看不见 rack_id —— 门控缺少判据来源</div>
+        <div class="step-body">
+          决策 #2 定的门控要比较「本地 rack」与「目标 rack」，但
+          <code>transfer_metadata.h</code> 里<b>搜不到任何 rack 字段</b>
+          （<code>BufferDesc</code> 只有 name / addr / length / device_id，
+          外加 <code>#ifdef</code> 里的 protocol 和 MR key）。
+        </div>
+        <div class="step-body" style="margin-top:10px">
+          <code>rack_id</code> 只活在 <b>Store 层</b>的 <code>Segment</code> 和副本
+          descriptor 里。门控要在 <b>TE 内部</b>做，而 TE 看不到 Store 的 rack_id。
+          所以<b>「复用本次已落地的 rack_id」这个说法不成立</b>——必须先把字段打通到
+          TE 元数据层，这本身是一项独立工作。
+        </div>
+        <div class="verdicts">
+          <span class="verdict v-no">今天：TE 无法回答「目标在不在我的 NVLink domain 里」</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <h3>为什么会形成这个局面：分配层先于选路层落地</h3>
+    <p>
+      fabric 分配（<code>MC_STORE_VRAM_FABRIC</code>）是独立可验证的——单机上就能确认
+      <code>cuMemCreate</code> 成功、句柄能导出，不需要 NVL72。
+      而选路层要真正验证，需要<b>多节点同机架 + IMEX domain</b>，门槛高得多。
+    </p>
+    <p>
+      于是先落地了能验证的那一半。代价是出现一个<b>中间状态</b>：
+      内存已经导出到 fabric、master 也会挑同机架的 segment，
+      但数据照旧从 RDMA 走——<b>看起来配置生效了，实际收益为零</b>，
+      而且不会有任何报错提示你这件事。
+    </p>
+  </div>
+
+  <div class="wide">
+  <table>
+    <thead><tr><th>要让选路层成立，依次需要</th><th>能否单测覆盖</th><th>状态</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>①</b> 把 <code>rack_id</code> 打通到 TE 元数据层（<code>BufferDesc</code> / segment desc）</td>
+        <td>可以</td>
+        <td><span class="status s-miss">未做</span></td>
+      </tr>
+      <tr>
+        <td><b>②</b> 机架可达性门控：跨 rack 的目标不选 nvlink</td>
+        <td>可以，<b>不需要 NVL72</b></td>
+        <td><span class="status s-miss">未做</span></td>
+      </tr>
+      <tr>
+        <td><b>③</b> 打破排他 <code>if/else</code>，让 nvlink 与 rdma 并存</td>
+        <td>部分</td>
+        <td><span class="status s-miss">未做</span></td>
+      </tr>
+      <tr>
+        <td><b>④</b> 打开 <code>ENABLE_MULTI_PROTOCOL</code> + segment 双协议注册</td>
+        <td>部分</td>
+        <td><span class="status s-miss">未做</span></td>
+      </tr>
+      <tr>
+        <td><b>⑤</b> nvlink 进 <code>protocol_priority()</code></td>
+        <td>可以</td>
+        <td><span class="status s-miss">未做</span></td>
+      </tr>
+      <tr>
+        <td><b>⑥</b> 真机验证：IMEX domain 覆盖、跨机架确实回落 RDMA</td>
+        <td>否，需 NVL72</td>
+        <td><span class="status s-miss">未做</span></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>
+    建议的顺序是 <b>② 先做</b>：它让「跨机架不会误选 NVLink」这件事变安全，是后面几步的前提，
+    而且纯单测可覆盖、不需要 NVL72。③ 是决策 #2 之后<b>从优化升级为必需</b>的一项——
+    没有它，配错 <code>rack_id</code> 的后果就是不可用而不是变慢。
+  </p>
+</section>
+
+<hr class="big">
+<footer>
+  配套文档：<code>ppio/nvlink-rack-affinity-review.md</code>（理论判据与缺陷评审）、
+  <code>ppio/fixed.md</code>（决策记录与改动清单）。
+  行号对应 <code>yaochen/topology-aware</code> 分支 2026-09-21 状态。
+</footer>
+
+</div>

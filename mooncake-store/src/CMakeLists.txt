@@ -90,6 +90,7 @@ set(MOONCAKE_STORE_CLIENT_SOURCES
     common/client_buffer_allocation.cpp
     mmap_arena.cpp
     config/hugepage_config.cpp
+    config/vram_fabric_config.cpp
     config/mmap_arena_config.cpp
     common/mmap_buffer.cpp
     client_service.cpp

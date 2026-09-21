@@ -196,6 +196,13 @@ class MooncakeConfig:
             endpoints. Default is False.
         client_http_port (int): Port for the client HTTP endpoints.
             Defaults to 9300.
+        rack_id (str): Identifier of the rack this machine belongs to, used
+            for rack-affinity scheduling. Empty (the default) disables rack
+            affinity entirely.
+        strict_rack (bool): Strict rack-affinity mode for the write path.
+            When True, the master only places objects on segments whose
+            rack_id matches, and a Put retries instead of falling back to a
+            different rack when the local rack is full. Default is False.
 
     Example of configuration file:
         {
@@ -242,6 +249,8 @@ class MooncakeConfig:
     tenant_id: str = "default"
     enable_client_http_server: bool = False
     client_http_port: int = 9300
+    rack_id: str = ""
+    strict_rack: bool = False
 
     def __post_init__(self):
         """Validate and normalise configuration invariants.
@@ -308,6 +317,7 @@ class MooncakeConfig:
                 raise ValueError(f"Missing required config field: {field}")
         ssd_offload_path = config.get("ssd_offload_path")
         tenant_id = config.get("tenant_id")
+        rack_id = config.get("rack_id")
         return MooncakeConfig(
             local_hostname=config.get("local_hostname"),
             metadata_server=config.get("metadata_server"),
@@ -329,6 +339,8 @@ class MooncakeConfig:
                 config.get("enable_client_http_server", False)
             ),
             client_http_port=int(config.get("client_http_port", 9300)),
+            rack_id=str(rack_id) if rack_id is not None else "",
+            strict_rack=_parse_bool(config.get("strict_rack", False)),
         )
 
     @staticmethod
@@ -370,5 +382,7 @@ class MooncakeConfig:
                     os.getenv("MOONCAKE_ENABLE_CLIENT_HTTP_SERVER", "false")
                 ),
                 client_http_port=int(os.getenv("MOONCAKE_CLIENT_HTTP_PORT", 9300)),
+                rack_id=os.getenv("MOONCAKE_RACK_ID", ""),
+                strict_rack=_parse_bool(os.getenv("MOONCAKE_STRICT_RACK", "false")),
             )
         return MooncakeConfig.from_file(config_file_path)

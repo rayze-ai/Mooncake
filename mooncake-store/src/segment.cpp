@@ -25,6 +25,33 @@ void AddHostSegment(HostSegmentIndex& index, const Segment& segment) {
     }
 }
 
+void AddRackSegment(RackSegmentIndex& index, const Segment& segment) {
+    if (segment.RackId().empty()) {
+        return;
+    }
+    // A rack here means one NVLink/IMEX domain, so only segments a reader can
+    // actually reach over NVLink belong in this index. CXL segments share one
+    // global allocator across every mounted CXL segment, so they cannot carry
+    // a per-segment rack on the allocator the way memory segments do; indexing
+    // them would make the master place writes as if they were same-rack while
+    // readers, reading the rack off the buffer descriptor, still see them as
+    // rack-external. Keep both sides agreeing by leaving CXL out.
+    //
+    // `protocol` is not part of the serialized MountedSegment, so it is empty
+    // on the snapshot-restore path. That is harmless here: a CXL segment's
+    // allocator is not an OffsetBufferAllocator, so it serializes with
+    // has_buffer_allocator=false and the restore path's non-null buf_allocator
+    // check already skips it before reaching this function.
+    if (segment.protocol == "cxl") {
+        return;
+    }
+    index[segment.name] = segment.RackId();
+}
+
+void RemoveRackSegment(RackSegmentIndex& index, const Segment& segment) {
+    index.erase(segment.name);
+}
+
 void RemoveHostSegment(HostSegmentIndex& index, const Segment& segment) {
     if (segment.host_id.empty()) {
         return;
@@ -122,6 +149,32 @@ std::vector<std::string> ScopedAllocatorAccess::GetHostOrderedSegments(
     return BuildHostOrderedSegments(*segments_by_host_, writer_host_id, key);
 }
 
+std::optional<std::string> ScopedAllocatorAccess::GetSegmentRackId(
+    const std::string& segment_name) const {
+    if (segment_rack_by_name_ == nullptr) {
+        return std::nullopt;
+    }
+    auto it = segment_rack_by_name_->find(segment_name);
+    if (it == segment_rack_by_name_->end()) {
+        return std::nullopt;
+    }
+    return it->second;
+}
+
+std::unordered_set<std::string> ScopedAllocatorAccess::GetRackSegmentNames(
+    const std::string& rack_id) const {
+    std::unordered_set<std::string> names;
+    if (segment_rack_by_name_ == nullptr || rack_id.empty()) {
+        return names;
+    }
+    for (const auto& [name, rack] : *segment_rack_by_name_) {
+        if (rack == rack_id) {
+            names.insert(name);
+        }
+    }
+    return names;
+}
+
 StorageUsageSnapshot SegmentManager::GetMemoryUsageSnapshot() const {
     std::shared_lock<std::shared_mutex> lock(segment_mutex_);
     StorageUsageSnapshot snapshot;
@@ -199,7 +252,8 @@ ErrorCode ScopedSegmentAccess::MountSegment(
         if (!owned || mounted.name != segment.name ||
             mounted.base != segment.base || mounted.size != segment.size ||
             mounted.te_endpoint != segment.te_endpoint ||
-            mounted.protocol != segment.protocol) {
+            mounted.protocol != segment.protocol ||
+            mounted.RackId() != segment.RackId()) {
             return ErrorCode::INVALID_PARAMS;
         }
         return ErrorCode::SEGMENT_ALREADY_EXISTS;
@@ -226,6 +280,7 @@ ErrorCode ScopedSegmentAccess::MountSegment(
             segment_manager_->client_by_name_[segment.name] = client_id;
             segment_manager_->segment_id_by_name_[segment.name] = segment.id;
             AddHostSegment(segment_manager_->segments_by_host_, segment);
+            AddRackSegment(segment_manager_->segment_rack_by_name_, segment);
 
             LOG(INFO) << "[CXL Segment Mounted Successfully] Segment name: "
                       << segment.name
@@ -259,6 +314,7 @@ ErrorCode ScopedSegmentAccess::MountSegment(
     }
     auto allocator = std::move(*created);
 
+    allocator->SetRackId(segment.RackId());
     allocator->AttachUsageTracker(segment_manager_->usage_tracker_);
     auto registration = segment_manager_->allocator_manager_.addAllocator(
         segment.name, allocator, std::move(client_liveness));
@@ -268,6 +324,7 @@ ErrorCode ScopedSegmentAccess::MountSegment(
     segment_manager_->client_by_name_[segment.name] = client_id;
     segment_manager_->segment_id_by_name_[segment.name] = segment.id;
     AddHostSegment(segment_manager_->segments_by_host_, segment);
+    AddRackSegment(segment_manager_->segment_rack_by_name_, segment);
     MasterMetricManager::instance().inc_total_mem_capacity(segment.name, size);
 
     return ErrorCode::OK;
@@ -360,7 +417,8 @@ ErrorCode ScopedSegmentAccess::ValidateRemountSegment(
         authoritative.size != segment.size ||
         authoritative.te_endpoint != segment.te_endpoint ||
         authoritative.protocol != segment.protocol ||
-        authoritative.host_id != segment.host_id) {
+        authoritative.host_id != segment.host_id ||
+        authoritative.RackId() != segment.RackId()) {
         return ErrorCode::INVALID_PARAMS;
     }
     return ErrorCode::OK;
@@ -445,6 +503,7 @@ ErrorCode ScopedSegmentAccess::PrepareUnmountSegment(
                                                              registration);
     }
     RemoveHostSegment(segment_manager_->segments_by_host_, segment);
+    RemoveRackSegment(segment_manager_->segment_rack_by_name_, segment);
 
     // 2. Invalidate detached allocation snapshots and existing buffers, then
     // remove the registration from mounted_segment. Do not detach usage here:
@@ -497,6 +556,7 @@ ErrorCode ScopedSegmentAccess::PrepareGracefulUnmountSegment(
     }
     registration->SetAllocatable(false);
     RemoveHostSegment(segment_manager_->segments_by_host_, segment);
+    RemoveRackSegment(segment_manager_->segment_rack_by_name_, segment);
     // Set the segment status to GRACEFULLY_UNMOUNTING
     mounted_segment.status = SegmentStatus::GRACEFULLY_UNMOUNTING;
     return ErrorCode::OK;
@@ -573,6 +633,8 @@ ErrorCode ScopedSegmentAccess::CommitUnmountSegment(
     const std::string segment_name = mounted->second.segment.name;
     const bool is_cxl = mounted->second.segment.protocol == "cxl";
     RemoveHostSegment(segment_manager_->segments_by_host_,
+                      mounted->second.segment);
+    RemoveRackSegment(segment_manager_->segment_rack_by_name_,
                       mounted->second.segment);
     if (!retain_name_registration) {
         ReindexSegmentNameAfterRemoval(segment_id, segment_name);
@@ -925,6 +987,7 @@ SegmentSerializer::Deserialize(const std::vector<uint8_t>& data) {
     segment_manager_->mounted_segments_.clear();
     segment_manager_->client_segments_.clear();
     segment_manager_->segments_by_host_.clear();
+    segment_manager_->segment_rack_by_name_.clear();
 
     // Process fields in order
     // 1. First process memory_allocator_
@@ -1132,6 +1195,7 @@ SegmentSerializer::Deserialize(const std::vector<uint8_t>& data) {
     segment_manager_->client_by_name_.clear();
     segment_manager_->segment_id_by_name_.clear();
     segment_manager_->segments_by_host_.clear();
+    segment_manager_->segment_rack_by_name_.clear();
     for (const auto& [client_id, segment_ids] :
          segment_manager_->client_segments_) {
         for (const auto& segment_id : segment_ids) {
@@ -1145,6 +1209,15 @@ SegmentSerializer::Deserialize(const std::vector<uint8_t>& data) {
                     it->second.buf_allocator) {
                     AddHostSegment(segment_manager_->segments_by_host_,
                                    it->second.segment);
+                    AddRackSegment(segment_manager_->segment_rack_by_name_,
+                                   it->second.segment);
+                    // Mirror MountSegment(): the rack index alone only drives
+                    // master-side placement. Readers get the rack from the
+                    // buffer descriptor, which reads it off the allocator, so
+                    // a restored allocator must carry it too or every replica
+                    // it serves looks rack-external.
+                    it->second.buf_allocator->SetRackId(
+                        it->second.segment.RackId());
                 }
             }
         }
@@ -1160,6 +1233,7 @@ void SegmentSerializer::Reset() {
     segment_manager_->client_by_name_.clear();
     segment_manager_->segment_id_by_name_.clear();
     segment_manager_->segments_by_host_.clear();
+    segment_manager_->segment_rack_by_name_.clear();
     segment_manager_->allocator_manager_ = AllocatorManager();
 }
 
@@ -1254,10 +1328,14 @@ ErrorCode ScopedSegmentAccess::SetSegmentStatusByName(
         allocator_manager.addRegistration(name, registration);
         AddHostSegment(segment_manager_->segments_by_host_,
                        mounted_segment.segment);
+        AddRackSegment(segment_manager_->segment_rack_by_name_,
+                       mounted_segment.segment);
     } else if (!should_be_allocatable && is_allocatable) {
         allocator_manager.removeAllocator(name, registration);
         registration->SetAllocatable(false);
         RemoveHostSegment(segment_manager_->segments_by_host_,
+                          mounted_segment.segment);
+        RemoveRackSegment(segment_manager_->segment_rack_by_name_,
                           mounted_segment.segment);
     }
 
