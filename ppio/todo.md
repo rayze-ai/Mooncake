@@ -2,6 +2,21 @@
 
 对应 `design.md`。按依赖顺序排,前一阶段的结论决定后一阶段做不做。
 
+## 进度(2026-09-23)
+
+| 阶段 | 状态 | 说明 |
+| --- | --- | --- |
+| 0 基线 | 跳过 | 后续补。当前只有推断("KV 走 RoCE"),没有计数器数据 |
+| 1 PD 直传 NVLink | **待你侧执行** | 两个 env,步骤在 `deployment.md` 一 |
+| 2 KV cache fabric | **已定案,待你侧执行** | `--enable-cumem-allocator`,硬件已核准 |
+| 3 Mooncake 代码 | **完成** | commit `9f23de2b`,115 上编过,31 例测试通过 |
+| 3.5 出 wheel | 待做 | 需 arm64 机器,115 是 x86 |
+| 4 部署 | 待做 | 依赖 3.5 |
+| 5 验证 store 路径 | 待做 | 依赖 4 |
+| 6 可选 | — | |
+
+分支 `yaochen/nvlink`,2 个 commit,**未 push**。
+
 ## 阶段 0:先证明现状(不改任何东西)
 
 目的:坐实"当前 KV 走 RoCE",拿到基线。不做这步,后面所有"变快了"都没有对照。
@@ -45,16 +60,18 @@
 | 自写 `.so` + patch vLLM(参考部署那套) | 与 cumem **同一套机制、同一个 PyTorch API**。上游已内置,重复造轮子,且多了版本绑定的锚点 |
 
 - [ ] P、D 各加 `--enable-cumem-allocator`
-- [ ] 硬件已核准(host-10-0-3-71):`cuMemCreate(DEVICE, FABRIC)` rc=0、`cuMemExportToShareableHandle` rc=0、`nvidia-smi -q` Fabric `State: Completed` `CliqueId 32766`
+- [x] 硬件已核准(host-10-0-3-71):`cuMemCreate(DEVICE, FABRIC)` rc=0、`cuMemExportToShareableHandle` rc=0、`nvidia-smi -q` Fabric `State: Completed` `CliqueId 32766`
 - [ ] 重启后看 UCX 日志**无** `does not have fabric property` —— 它现在多一个含义:cumem 在 `:157-160` 静默回落到了 POSIX FD
 - [ ] 计数器差分同阶段 1
 
 **一个注意**:cumem 的 FABRIC 失败回落是静默的(`cumem_allocator.cpp:157-160`),分配照样成功,
 UCX/TE 那边才发现导不出。所以阶段 1 那条日志仍是必看项。
 
-## 阶段 3:Mooncake 改代码(fabric 那一半)
+## 阶段 3:Mooncake 改代码(fabric 那一半)—— 完成
 
-前置:阶段 1 通了。否则 store 那条路即便改好,vLLM KV cache 注册进 TE 也是空的。
+原前置是"阶段 1 通了再做"。实际按你的决定并行做了:代码本身不依赖阶段 1 的结果,
+依赖的只是部署价值。**部署价值仍然取决于阶段 1**:阶段 1 不通,store 这条路即便改好,
+vLLM KV cache 注册进 TE 也是空的。
 
 ### 3.1 host DRAM VMM 分配器
 
@@ -115,7 +132,9 @@ UCX/TE 那边才发现导不出。所以阶段 1 那条日志仍是必看项。
 
 ### 3.5 出 wheel
 
-- [ ] `OUTPUT_DIR=dist ./scripts/build_wheel.sh`,**arm64 上构建**(GB300 是 Grace)
+- [ ] 找 arm64 构建机 —— 115(`host-192-168-172-115`)是 x86,编出来的 wheel GB300 用不了。候选:GB300 节点本身,或 arm64 CI runner
+- [ ] 在那台机器上重跑 3.4 的 cmake + make,确认 arm64 下也能编(x86 过了不代表 arm64 过)
+- [ ] `OUTPUT_DIR=dist ./scripts/build_wheel.sh`
 - [ ] 推到 `vllm-code-server.ruizi-k3pd:9099/mooncake.whl`,更新 `MOONCAKE_VERSION`
 
 ## 阶段 4:部署配置

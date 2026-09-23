@@ -286,6 +286,7 @@ Using NVLink transport (forced or no HCA detected)
 
 **UCX 日志有 `does not have fabric property`**:cumem 回落了。同上查 IMEX。
 
-**注册后远端读 miss、日志无错**:这是 `nvlink_transport.cpp:999-1002` 那条静默路径,
-阶段 3.3 要把它改成硬错。改之前遇到,直接查 store 进程有没有
-`Allocated ... fabric host memory`。
+**注册后远端读 miss、日志无错**:阶段 3 之后这条路默认已是硬错 —— segment 内存不是
+VMM 分配时 `MountSegment` 直接失败并打 ERROR。还能看到"mount 成功但远端 miss"只有
+一种可能:store 进程设了 `MC_NVLINK_TOLERATE_NON_FABRIC`,日志里会有对应 WARNING。
+`unset` 它让失败提前到启动。
