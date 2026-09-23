@@ -202,7 +202,7 @@ json:
 
 确认 `MC_STORE_USE_HUGEPAGE` **未设**:它存在即生效(设 `0` 也算开),会把分配截走。
 
-### P
+### Prefill
 
 在阶段 1-2 的基础上再加:
 
@@ -213,7 +213,7 @@ json:
 
 connector 不动(已是 `MultiConnector` + Nixl producer + Store kv_both)。换新 wheel。
 
-### D
+### Decode
 
 在阶段 1-2 的基础上:
 

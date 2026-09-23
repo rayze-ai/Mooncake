@@ -147,13 +147,13 @@ vLLM KV cache 注册进 TE 也是空的。
 - [ ] 非 privileged 则加 `NVIDIA_IMEX_CHANNELS=0`;privileged 不需要
 - [ ] 确认 `MC_STORE_USE_HUGEPAGE` **未设**(存在即生效,会截走 fabric 路径)
 
-### P
+### Prefill
 
 - [ ] 换新 wheel
 - [ ] env 加 `MC_FORCE_MNNVL=1`(让 P 的 TE 装 nvlink 而非 rdma)
 - [ ] connector 不动(已是 `MultiConnector` + Nixl producer + Store kv_both)
 
-### D
+### Decode
 
 - [ ] 换新 wheel
 - [ ] `--kv-transfer-config` 改成 `MultiConnector`,加 `MooncakeStoreConnector`(`kv_consumer`,`enable_lookup: true`)
