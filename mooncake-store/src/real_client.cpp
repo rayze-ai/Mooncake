@@ -950,6 +950,15 @@ tl::expected<void, ErrorCode> RealClient::setup_internal(
         }
     }
 
+    // The nvlink transport is installed by the transfer engine from build flags
+    // and MC_FORCE_MNNVL / MC_INTRANODE_NVLINK / HCA absence, never from the
+    // protocol string above. Publish the resulting mode before the first
+    // allocation so segment memory on a node that routes over nvlink carries a
+    // retainable allocation handle even when protocol is "rdma" -- without it,
+    // NvlinkTransport::registerLocalMemory() cannot retain a handle and the
+    // segment is unreachable from any peer node.
+    set_nvlink_fabric_ready(client_->NvlinkUsesFabricMem());
+
     // Local_buffer_size is allowed to be 0, but we only register memory when
     // local_buffer_size > 0. Invoke ibv_reg_mr() with size=0 is UB, and may
     // fail in some rdma implementations.

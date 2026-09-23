@@ -1,5 +1,14 @@
 #include "common/client_buffer_allocation.h"
 
+// Host fabric (EGM) is only reachable on the plain-host fallback path at the
+// end of allocate_buffer_allocator_memory(); a USE_VRAM_SEGMENT build returns
+// earlier with device memory for every segment and never gets there.
+#if defined(USE_CUDA) && !defined(USE_VRAM_SEGMENT)
+#define MOONCAKE_STORE_FABRIC_HOST 1
+#include "common/host_fabric_allocator.h"
+#include "config/host_fabric_config.h"
+#endif
+
 #include "config.h"
 #include "config/hugepage_config.h"
 #include "ub_allocator.h"
@@ -25,6 +34,23 @@
 
 namespace mooncake {
 namespace {
+
+// See client_buffer_allocation.h. Plain bool rather than atomic: written once
+// during setup before any allocation, read-only afterwards.
+bool g_nvlink_fabric_ready = false;
+
+#ifdef MOONCAKE_STORE_FABRIC_HOST
+// Both conditions, in this order: the transport must actually be exporting
+// fabric handles (otherwise a fabric buffer is pointless and, in IPC mode,
+// fails registration), and the operator must have opted in. The env is read
+// once so an allocation and its later release agree on which allocator owns
+// the memory.
+bool use_fabric_host() {
+    if (!nvlink_fabric_ready()) return false;
+    static const bool enabled = HostFabricConfig::IsEnabledFromEnvironment();
+    return enabled;
+}
+#endif
 
 #ifdef USE_VRAM_SEGMENT
 tl::expected<void *, std::string> allocate_vram_memory(
@@ -57,6 +83,10 @@ tl::expected<void *, std::string> allocate_vram_memory(
 #endif
 
 }  // namespace
+
+void set_nvlink_fabric_ready(bool ready) { g_nvlink_fabric_ready = ready; }
+
+bool nvlink_fabric_ready() { return g_nvlink_fabric_ready; }
 
 size_t get_hugepage_size_from_env(unsigned int *out_flags, bool use_memfd) {
     const HugepageConfig config = HugepageConfig::FromEnvironment();
@@ -126,6 +156,22 @@ void *allocate_buffer_allocator_memory(size_t total_size,
     }
     return *ret;
 #endif
+#ifdef MOONCAKE_STORE_FABRIC_HOST
+    if (use_fabric_host()) {
+        void *ptr = allocate_fabric_host_memory(total_size, alignment);
+        if (ptr == nullptr) {
+            // No fallback to aligned_alloc: that pointer would register as
+            // empty under a fabric-mode nvlink transport and only fail at the
+            // first remote read, with a far less obvious cause.
+            LOG(ERROR) << "Failed to allocate " << total_size
+                       << " bytes of fabric host memory for protocol "
+                       << protocol
+                       << "; unset MC_STORE_HOST_FABRIC to use plain host "
+                          "memory instead.";
+        }
+        return ptr;
+    }
+#endif
     // Allocate aligned memory
     return aligned_alloc(alignment, total_size);
 }
@@ -163,6 +209,14 @@ void free_memory(const std::string &protocol, void *ptr, bool use_spdk_dma) {
     cudaFree(ptr);
 #endif
     return;
+#endif
+#ifdef MOONCAKE_STORE_FABRIC_HOST
+    // Mirror allocate_buffer_allocator_memory(): a fabric buffer is a VMM
+    // mapping, and glibc free() on it aborts with "free(): invalid pointer".
+    if (use_fabric_host()) {
+        free_fabric_host_memory(ptr);
+        return;
+    }
 #endif
     free(ptr);
 }

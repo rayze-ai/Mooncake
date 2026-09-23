@@ -655,6 +655,14 @@ class Client {
         return transfer_engine_->getLocalIpAndPort();
     }
 
+    // True when this node's transfer engine has an nvlink transport installed
+    // that exports fabric handles. Segment memory on such a node must carry a
+    // retainable allocation handle regardless of the protocol string passed to
+    // setup(); see set_nvlink_fabric_ready() in client_buffer_allocation.h.
+    [[nodiscard]] bool NvlinkUsesFabricMem() const {
+        return transfer_engine_ && transfer_engine_->nvlinkUsesFabricMem();
+    }
+
     [[nodiscard]] const std::string& GetProtocol() const { return protocol_; }
 
     [[nodiscard]] bool CanUseLocalMemcpy(const std::string& endpoint) const {

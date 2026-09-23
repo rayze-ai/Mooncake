@@ -49,6 +49,8 @@ add_store_test(client_liveness_test client_liveness_test.cpp)
 add_store_test(master_config_test master_config_test.cpp)
 add_store_test(replica_selection_test replica_selection_test.cpp)
 add_store_test(replica_selection_config_test replica_selection_config_test.cpp)
+add_store_test(host_fabric_config_test host_fabric_config_test.cpp)
+add_store_test(nvlink_fabric_ready_test nvlink_fabric_ready_test.cpp)
 set_tests_properties(replica_selection_test
                      PROPERTIES ENVIRONMENT "MC_STORE_REPLICA_SCORING=0")
 add_test(

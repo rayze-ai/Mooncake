@@ -286,6 +286,10 @@ Transport* TransferEngine::getTransport(const std::string& proto) {
     return impl_->getTransport(proto);
 }
 
+bool TransferEngine::nvlinkUsesFabricMem() const {
+    return impl_->nvlinkUsesFabricMem();
+}
+
 #if (defined(USE_CUDA) || defined(USE_MUSA) || defined(USE_MACA)) && \
     !defined(USE_CXI)
 device::P2pTransport* TransferEngine::getOrCreateP2pTransport(int num_ranks) {
@@ -951,6 +955,14 @@ Transport* TransferEngine::getTransport(const std::string& proto) {
         return nullptr;
     else
         return impl_->getTransport(proto);
+}
+
+bool TransferEngine::nvlinkUsesFabricMem() const {
+    // TENT owns transport configuration internally and installs no nvlink
+    // transport of its own, so there is no fabric-exporting transport to
+    // report.
+    if (use_tent_) return false;
+    return impl_->nvlinkUsesFabricMem();
 }
 
 #if (defined(USE_CUDA) || defined(USE_MUSA) || defined(USE_MACA)) && \

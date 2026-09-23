@@ -780,6 +780,17 @@ Transport* MultiTransport::getTransport(const std::string& proto) {
     return transport_map_[proto].get();
 }
 
+bool MultiTransport::nvlinkUsesFabricMem() const {
+#ifdef USE_MNNVL
+    auto it = transport_map_.find("nvlink");
+    if (it == transport_map_.end()) return false;
+    auto* nvlink = dynamic_cast<NvlinkTransport*>(it->second.get());
+    return nvlink != nullptr && nvlink->usesFabricMem();
+#else
+    return false;
+#endif
+}
+
 bool MultiTransport::isTcpOnly() const {
     // SHM is intra-node DRAM IPC, not a cross-host fabric. Ignore it so a
     // tcp+shm engine still auto-enables Store same-process memcpy.

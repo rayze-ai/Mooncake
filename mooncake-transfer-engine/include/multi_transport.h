@@ -77,6 +77,13 @@ class MultiTransport {
 
     Transport *getTransport(const std::string &proto);
 
+    // True when an nvlink transport is installed and running in fabric mode.
+    // False when none is installed, or when it runs in same-host IPC mode.
+    // Exposed so the Store can decide at setup time whether segment memory
+    // must be VMM-allocated; see use_fabric_host() in
+    // mooncake-store/src/common/client_buffer_allocation.cpp.
+    bool nvlinkUsesFabricMem() const;
+
     /**
      * @brief Check if TCP is the only installed host transport.
      *

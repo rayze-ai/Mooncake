@@ -86,6 +86,13 @@ struct MmapArenaEnvironmentVariables {
     MC_DEFINE_ENV_VAR(std::string, MC_DISABLE_MMAP_ARENA);
 };
 
+struct HostFabricEnvironmentVariables {
+    // Value-based, unlike MC_STORE_USE_HUGEPAGE: "=0" is off and an invalid
+    // value warns and stays off. A presence-based switch here would let a
+    // stray "=0" silently opt a node into the fabric allocator.
+    MC_DEFINE_ENV_VAR(std::string, MC_STORE_HOST_FABRIC);
+};
+
 struct HugepageEnvironmentVariables {
     // Keep these values as strings to preserve presence-based enablement and
     // the existing byte-size parser, fallback, and logging behavior.

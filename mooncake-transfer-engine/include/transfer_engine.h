@@ -260,6 +260,13 @@ class TransferEngine {
 
     Transport* getTransport(const std::string& proto);
 
+    // True when an nvlink transport is installed and exporting fabric handles
+    // (cross-host, one NVLink domain) rather than cudaIpcMemHandle_t. Decided
+    // at install time from device capability plus MC_USE_NVLINK_IPC, so it is a
+    // property of this node. Callers that allocate memory for a segment need it
+    // to decide whether that memory must carry a retainable allocation handle.
+    bool nvlinkUsesFabricMem() const;
+
 #if (defined(USE_CUDA) || defined(USE_MUSA) || defined(USE_MACA)) && \
     !defined(USE_CXI)
     // Device transport accessors (P2P + IBGDA).  Lazily created on first

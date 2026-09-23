@@ -996,10 +996,45 @@ int NvlinkTransport::registerLocalMemory(void *addr, size_t length,
         CUmemGenericAllocationHandle handle;
         auto result = cuMemRetainAllocationHandle(&handle, addr);
         if (result != CUDA_SUCCESS) {
-            LOG(WARNING) << "Memory region " << addr
-                         << " is not allocated by cuMemCreate, "
-                         << "but it can be used as local buffer";
-            return 0;
+            // Not a VMM allocation, so no fabric handle can be exported and
+            // this region cannot be published to peers. Whether that is a
+            // problem depends on what the caller wanted:
+            //
+            // - remote_accessible=false: a local staging buffer (the Store's
+            //   local_buffer, for one). Peers never read it. Skipping the
+            //   metadata publish is the correct outcome, not a failure.
+            // - remote_accessible=true: the caller intends peers to read it
+            //   (a Store segment). Returning success here would let the
+            //   segment mount and appear in the master's index while being
+            //   unreachable from every other node -- a failure that only
+            //   surfaces at the first remote read, five steps from its cause.
+            //   Fail now instead, unless the operator explicitly opts into the
+            //   old behaviour with MC_NVLINK_TOLERATE_NON_FABRIC.
+            if (!remote_accessible) {
+                LOG(INFO) << "NvlinkTransport: memory region " << addr
+                          << " is not a VMM allocation; registered for local "
+                             "use only (remote_accessible=false)";
+                return 0;
+            }
+            if (getenv("MC_NVLINK_TOLERATE_NON_FABRIC")) {
+                LOG(WARNING) << "NvlinkTransport: memory region " << addr
+                             << " (" << length
+                             << " bytes) is not a VMM allocation and cannot "
+                                "be exported as a fabric handle; peers will "
+                                "not be able to read it. Continuing because "
+                                "MC_NVLINK_TOLERATE_NON_FABRIC is set.";
+                return 0;
+            }
+            LOG(ERROR) << "NvlinkTransport: memory region " << addr << " ("
+                       << length
+                       << " bytes) was registered as remote-accessible but is "
+                          "not a VMM allocation, so no fabric handle can be "
+                          "exported and no peer could read it. Allocate it "
+                          "with cuMemCreate (for a Store segment, set "
+                          "MC_STORE_HOST_FABRIC=1), or set "
+                          "MC_NVLINK_TOLERATE_NON_FABRIC to accept an "
+                          "unreachable registration.";
+            return -1;
         }
 
         // Find whole physical page for memory registration
@@ -1025,7 +1060,6 @@ int NvlinkTransport::registerLocalMemory(void *addr, size_t length,
             return -1;
         }
 
-        (void)remote_accessible;
         BufferDesc desc;
         desc.addr = (uint64_t)real_addr;  // (uint64_t)addr;
         desc.length = real_size;          // length;

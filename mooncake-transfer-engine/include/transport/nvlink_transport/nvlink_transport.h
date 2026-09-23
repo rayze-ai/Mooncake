@@ -108,6 +108,13 @@ class NvlinkTransport : public Transport {
 
     static void freePinnedLocalMemory(void* addr);
 
+    // True when this transport exports fabric handles (cross-node, one NVLink
+    // domain) rather than cudaIpcMemHandle_t (same host only). Decided once at
+    // install time from device capability plus MC_USE_NVLINK_IPC. Memory
+    // registered with a fabric-mode transport must carry a retainable
+    // allocation handle; callers that allocate segment memory need to know.
+    bool usesFabricMem() const { return use_fabric_mem_; }
+
    protected:
     NvlinkTransport(std::shared_ptr<GpuIpcTransportPolicy> policy,
                     bool use_fabric_mem);

@@ -24,6 +24,22 @@ constexpr size_t SZ_512MB = 512 * 1024 * 1024;
 constexpr size_t SZ_1GB = 1024 * 1024 * 1024;
 constexpr double BYTES_PER_GIB = static_cast<double>(SZ_1GB);
 
+// Records whether this process has an nvlink transport installed that exports
+// fabric handles. The Store's protocol string does not answer this: nvlink
+// transport installation is decided by build flags plus MC_FORCE_MNNVL /
+// MC_INTRANODE_NVLINK / absence of an HCA, and never by the protocol name a
+// client passes to setup(). A node configured with protocol="rdma" can still
+// route over nvlink, and its segment memory then needs a retainable allocation
+// handle just the same.
+//
+// Set once after the transfer engine is initialized and before any segment is
+// allocated, so an allocation and its later release agree on which allocator
+// owns the memory. Not thread-safe against concurrent allocation; call it
+// during setup only.
+void set_nvlink_fabric_ready(bool ready);
+
+[[nodiscard]] bool nvlink_fabric_ready();
+
 void* allocate_buffer_allocator_memory(
     size_t total_size, const std::string& protocol = "",
     size_t alignment = facebook::cachelib::Slab::kSize,
